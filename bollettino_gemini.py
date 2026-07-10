@@ -35,6 +35,7 @@ def interpella_gemini(dati_meteo, info_giornaliere):
     2. Usa le temperature min/max fornite nei riferimenti ufficiali come base della narrazione.
     3. Focalizzati su nuvolosità, vento/raffiche e rischio precipitazioni basandoti sui dati orari.
     4. REGOLA NEBBIA/BRINA: Valuta autonomamente il rischio incrociando Temperatura, UR% e Dew Point (Punto di rugiada). Menziona possibili foschie, nebbie o brinate SOLO se le condizioni fisiche lo suggeriscono fortemente (es. aria stagnante, T notturna vicina allo 0°C, UR > 90% e T vicina al Dew Point). Se le condizioni non ci sono (es. estate, aria secca o ventilazione), non nominarli affatto e non dare giustificazioni.
+    5. REGOLA DISAGIO TERMICO: Valuta lo stress termico per il corpo umano. In estate (T > 30°C), incrocia Temperatura e Dew Point per segnalare eventuale afa o marcato disagio da caldo. In inverno (T < 10°C), incrocia Temperatura e Vento per segnalare freddo acuito (Wind Chill). Se i valori rientrano in un normale comfort termico, non menzionare nulla.
     
     DATI ANALITICI ORARI (Ora | T | UR% | Dew | Prec.D2 | EPS-Max | Vento | Raffica):
     {dati_meteo}
