@@ -42,7 +42,7 @@ def interpella_gemini(dati_meteo):
 
     try:
         # Usiamo l'alias 'gemini-1.5-flash-latest' che è più robusto per le chiamate API
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('models/gemini-3.5-flash')
         
         response = model.generate_content(
             prompt,
