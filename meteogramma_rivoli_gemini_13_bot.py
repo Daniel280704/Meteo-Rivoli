@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
 Meteogramma per Rivoli (TO) basato su modelli ICON e AROME.
-- Versione 13.1: Estensione automatica a 3 giorni di calendario per D2 e AROME (copertura 48h reali).
+- Versione 13.2: Integrazione Ensemble PEARO per AROME (Météo-France EPS).
+- Estensione automatica a 3 giorni di calendario per D2 e AROME (copertura 48h reali).
 - Layout a tre livelli (6 pannelli EPS, 5 pannelli DET con Zero Termico, 4 pannelli per AROME).
-- Esclusione della richiesta di Zero Termico per l'API di AROME.
+- Esclusione della richiesta di Zero Termico per l'API di AROME (sia det che eps).
 - Sistema Anti-Crash con auto-retry per errore 503.
 - Integrazione Bot Telegram per invio automatico dei grafici generati.
 
 Uso:
-    python3 meteogramma_rivoli_gemini_13.py --modello d2
+    python3 meteogramma_rivoli_gemini_13.py --modello arome
 """
 
 import argparse
@@ -53,11 +54,11 @@ MODELLI = {
         "is_ensemble": True
     },
     "arome": {
-        "id_api": "", 
+        "id_api": "meteofrance_ensemble", 
         "id_api_det": "meteofrance_arome_france_hd",
-        "nome": "AROME-France HD (1.5km)",
+        "nome": "AROME-France EPS (1.5km/2.5km)",
         "orizzonte_ore": 48, 
-        "is_ensemble": False
+        "is_ensemble": True
     },
     "icon2i": {
         "id_api": "",
@@ -88,8 +89,9 @@ def stima_run_attuale(modello: str):
         run_disponibili = [0, 3, 6, 9, 12, 15, 18, 21]
         delay = 1.5 
     elif modello == "arome":
-        run_disponibili = [0, 3, 6, 9, 12, 15, 18, 21]
-        delay = 2.0
+        # Le Ensemble francesi PEARO girano tipicamente 4 volte al giorno
+        run_disponibili = [0, 6, 12, 18]
+        delay = 4.0
     elif modello == "icon2i":
         run_disponibili = [0, 12]
         delay = 3.5 
@@ -130,11 +132,16 @@ def fetch_data(lat: float, lon: float, giorni: int, modello: str) -> dict:
     if not MODELLI[modello]["is_ensemble"]:
         return {"hourly": {"time": []}}
         
+    # Escludiamo lo zero termico per Arome EPS prima di inviare i parametri all'API
+    vars_filtrate = list(VARIABILI)
+    if modello == "arome" and "freezing_level_height" in vars_filtrate:
+        vars_filtrate.remove("freezing_level_height")
+        
     params = {
         "latitude": lat,
         "longitude": lon,
         "models": MODELLI[modello]["id_api"],
-        "hourly": ",".join(VARIABILI),
+        "hourly": ",".join(vars_filtrate),
         "forecast_days": giorni,
         "timezone": "Europe/Rome",
     }
