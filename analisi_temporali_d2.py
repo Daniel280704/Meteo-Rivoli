@@ -2,9 +2,10 @@
 """
 Analizzatore Termodinamico e Cinematico per Rischio Temporali (Stile ESTOFEX)
 Modello: ICON-D2 (Copertura 48h)
-- Integrazione Filtro Precipitazioni ENS (Media Spaghi > 0.0)
+- Integrazione Filtro Precipitazioni ENS (Media Spaghi > 0.05mm)
 - Calcolo esplicito dimensione grandine
 - Integrazione col nuovo SDK google.genai
+- Focus fenomenologico: analisi condizionata all'innesco
 """
 
 import os
@@ -17,7 +18,8 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 
-LAT = 45.0734521841099  # Rivoli
+# Coordinate aggiornate
+LAT = 45.0734521841099
 LON = 7.543386286825349
 
 def get_pioggia_ens_media():
@@ -157,10 +159,10 @@ def interpella_gemini(report_tecnico, giorno_str, stima_grandine):
         
         prompt = f"""
         Sei un meteorologo esperto in convezione profonda (livello ESTOFEX).
-        Il tuo compito è analizzare i seguenti parametri calcolati per {giorno_str} a Rivoli (TO), 
-        e fornire un bollettino.
+        Il tuo compito è analizzare i seguenti parametri calcolati per {giorno_str} a Rivoli (TO) nel momento di picco, 
+        e fornire un bollettino sul TIPO DI TEMPORALE atteso.
         
-        NOTA: La probabilità che il temporale si inneschi è confermata dalle Ensemble, quindi DAI PER CERTO L'INNESCO.
+        NOTA FONDAMENTALE: Non devi dare l'innesco del temporale per certo. Usa formule come "In caso di innesco", "Qualora si attivasse la convezione" o simili, e poi prosegui con l'analisi fenomenologica.
 
         DATI ICON-D2:
         {report_tecnico}
@@ -211,10 +213,11 @@ def main():
 
     for data_str, indici in giorni.items():
         
-        # 1. CONTROLLO PIOGGIA: Basta un segnale minimo (> 0.0) per non escludere l'innesco.
+        # 1. CONTROLLO PIOGGIA: Filtro per rumore di fondo matematico.
+        # Deve esserci almeno una vera traccia (es. 0.05mm medi significa almeno 1mm su 1 spago).
         media_pioggia_giorno = pioggia_ens.get(data_str, 0)
-        if media_pioggia_giorno <= 0.0:
-            print(f"[{data_str}] Analisi saltata: Assenza totale di segnale precipitativo nelle ENS (Media: {media_pioggia_giorno:.1f} mm).")
+        if media_pioggia_giorno < 0.05:
+            print(f"[{data_str}] Analisi saltata: Assenza o rumore di fondo precipitativo nelle ENS (Media: {media_pioggia_giorno:.3f} mm).")
             continue
 
         # 2. RICERCA ORA DI PICCO (Max CAPE tra le 12 e le 20)
