@@ -3,12 +3,12 @@
 Meteogramma per Rivoli (TO) basato su modelli ICON e AROME.
 - Versione 13.1 (Modificata): Estensione automatica a 3 giorni, layout a tre livelli.
 - Rimozione del Run dal titolo.
-- Rilevamento automatico di dati nuovi con badge "NUOVO" rosso sul grafico.
+- Anti-Spam: Il bot NON INVIA e non genera nulla se i dati sono identici a prima.
 - Sistema Anti-Crash con auto-retry per errore 503.
 - Integrazione Bot Telegram per invio automatico dei grafici generati.
 
 Uso:
-    python3 meteogramma_rivoli_gemini_13.py --modello d2
+    python3 meteogramma_rivoli_gemini_13_bot.py --modello d2
 """
 
 import argparse
@@ -452,10 +452,12 @@ def main():
     # Verifica se i dati sono cambiati rispetto all'ultima volta
     is_nuovo = verifica_dati_nuovi(dati, dati_det, args.modello)
     
-    if is_nuovo:
-        print(f"ℹ️ Trovati dati aggiornati per il modello {args.modello.upper()}.")
-    else:
-        print(f"ℹ️ Nessun aggiornamento trovato per {args.modello.upper()} rispetto all'ultimo grafico.")
+    # Se i dati NON sono nuovi, fermiamo l'esecuzione per questo specifico modello pulitamente
+    if not is_nuovo:
+        print(f"ℹ️ Nessun aggiornamento trovato per {args.modello.upper()} rispetto all'ultimo grafico. Invio annullato.")
+        sys.exit(0)
+        
+    print(f"ℹ️ Trovati dati aggiornati per il modello {args.modello.upper()}. Generazione in corso...")
 
     # Genera il grafico e passa il flag 'is_nuovo' per aggiungere o meno il badge
     plot_meteogramma(dati, dati_det, out_path, args.modello, is_nuovo)
