@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
 Meteogramma per Rivoli (TO) basato su modelli ICON e AROME.
-- Versione 13.1: Estensione automatica a 3 giorni di calendario per D2 e AROME (copertura 48h reali).
+- Versione 13.4: Rimozione stima Run (fuorviante), mantenimento ora di generazione.
+- Sistema Anti-Crash potenziato (Timeout a 60 secondi).
+- Estensione automatica a 3 giorni di calendario per D2 e AROME (copertura 48h reali).
 - Layout a tre livelli (6 pannelli EPS, 5 pannelli DET con Zero Termico, 4 pannelli per AROME).
 - Esclusione della richiesta di Zero Termico per l'API di AROME.
-- Sistema Anti-Crash con auto-retry per errore 503.
 - Integrazione Bot Telegram per invio automatico dei grafici generati.
 
 Uso:
-    python3 meteogramma_rivoli_gemini_13.py --modello d2
+    python3 meteogramma_rivoli_gemini_13_bot.py --modello d2
 """
 
 import argparse
@@ -80,36 +81,10 @@ VARIABILI = [
 SOGLIE_PIOGGIA_1H = [0.2, 1.0, 5.0]
 
 
-def stima_run_attuale(modello: str):
-    now_utc = datetime.now(timezone.utc)
-    ora_utc = now_utc.hour + now_utc.minute / 60.0
-    
-    if modello == "d2":
-        run_disponibili = [0, 3, 6, 9, 12, 15, 18, 21]
-        delay = 1.5 
-    elif modello == "arome":
-        run_disponibili = [0, 3, 6, 9, 12, 15, 18, 21]
-        delay = 2.0
-    elif modello == "icon2i":
-        run_disponibili = [0, 12]
-        delay = 3.5 
-    else:
-        run_disponibili = [0, 6, 12, 18]
-        delay = 2.5 if modello == "ch2" else 2.0
-        
-    run_stimato = run_disponibili[-1] 
-    for run in sorted(run_disponibili, reverse=True):
-        if ora_utc >= (run + delay):
-            run_stimato = run
-            break
-            
-    return run_stimato, f"{run_stimato:02d}Z"
-
-
 def fetch_con_retry(url: str, params: dict, max_retries: int = 4) -> dict:
     for tentativo in range(max_retries):
         try:
-            # Aumentato il timeout da 30 a 60 secondi per dare respiro ai server
+            # Aumentato il timeout da 30 a 60 secondi per dare respiro ai server EPS
             resp = requests.get(url, params=params, timeout=60)
             resp.raise_for_status()
             return resp.json()
@@ -212,7 +187,6 @@ def formatta_assi(ax, y_label_step=None, x_interval=1):
 def plot_meteogramma(data: dict, dati_det: dict, out_path: str, modello: str, luogo: str = "Rivoli (TO)"):
     is_ensemble = MODELLI[modello]["is_ensemble"]
     has_zero = (modello != "arome")
-    run_utc_int, run_str = stima_run_attuale(modello)
     
     asse_temporale_base = data["hourly"]["time"] if is_ensemble else dati_det["hourly"]["time"]
     
@@ -289,8 +263,9 @@ def plot_meteogramma(data: dict, dati_det: dict, out_path: str, modello: str, lu
         ax_temp, ax_prec, ax_wind, ax_rh = axes
         sottotitolo = "Corsa singola deterministica ad altissima risoluzione geografica"
         
+    # Titolo pulito senza il calcolo del Run
     fig.suptitle(
-        f"{nome_modello} — {luogo} (Quota griglia: {quota_modello} m) | Run: {run_str}\n{sottotitolo}",
+        f"{nome_modello} — {luogo} (Quota griglia: {quota_modello} m)\n{sottotitolo}",
         fontsize=13, fontweight="bold",
     )
 
