@@ -69,7 +69,6 @@ def valuta_stress(bilancio):
         return "🟣 ESTREMO"
 
 def calcola_dati_orto():
-    # Chiediamo ben 10 giorni di storico per avere una simulazione accurata del suolo
     api_params_det = {
         "latitude": LAT_RIVOLI, "longitude": LON_RIVOLI,
         "hourly": "precipitation,et0_fao_evapotranspiration",
@@ -96,7 +95,6 @@ def calcola_dati_orto():
     domani_str = (now_rome + timedelta(days=1)).strftime("%Y-%m-%d")
     dopo_str = (now_rome + timedelta(days=2)).strftime("%Y-%m-%d")
 
-    # Controlliamo in quale data è stato premuto il tasto Telegram
     data_reset_manuale = None
     if os.path.exists("ultima_innaffiatura.txt"):
         with open("ultima_innaffiatura.txt", "r") as f:
@@ -112,8 +110,8 @@ def calcola_dati_orto():
     e_det = dati_det["et0_fao_evapotranspiration"]
 
     # --- SIMULATORE STORICO IN MEMORIA ---
-    # Partiamo da 10 giorni fa e ricostruiamo la storia dell'orto giorno per giorno
     bilancio = 0.0
+    p_ieri = e_ieri = bil_ieri = 0.0
     
     for i in range(10, 0, -1):
         data_storica = (now_rome - timedelta(days=i)).strftime("%Y-%m-%d")
@@ -126,32 +124,35 @@ def calcola_dati_orto():
             
             bilancio += (p_giorno - e_giorno)
             
-            # Se ha piovuto in modo utile (>3.5mm) o hai premuto il tasto, il terreno si satura (azzera deficit)
-            if p_giorno >= 3.5 or data_storica == data_reset_manuale:
+            if p_giorno >= 3.0 or data_storica == data_reset_manuale:
                 bilancio = 0.0
             
-            # Il terreno non può trattenere acqua infinita (se il bilancio va in positivo, l'eccesso drena)
             if bilancio > 0.0:
                 bilancio = 0.0
+                
+            # Limite massimo di deficit (per evitare numeri infiniti e irreali)
+            bilancio = max(bilancio, -25.0)
 
-            # Salviamo specificatamente i dati di IERI per il messaggio
             if data_storica == ieri_str:
                 p_ieri = p_giorno
                 e_ieri = e_giorno
                 bil_ieri = bilancio
 
-    # --- OGGI (Prime 19 ore: 00:00 -> 18:00 inclusive) ---
+    # --- OGGI (Prime 19 ore: 00:00 -> 19:00 inclusive) ---
     idx_oggi_s = get_idx(f"{oggi_str}T00:00")
-    idx_oggi_e = get_idx(f"{oggi_str}T18:00")
+    idx_oggi_e = get_idx(f"{oggi_str}T19:00")
     
-    p_oggi = sum(p for p in p_det[idx_oggi_s:idx_oggi_e+1] if p is not None)
-    e_oggi = sum(e for e in e_det[idx_oggi_s:idx_oggi_e+1] if e is not None)
+    p_oggi = e_oggi = 0.0
+    if idx_oggi_s is not None and idx_oggi_e is not None:
+        p_oggi = sum(p for p in p_det[idx_oggi_s:idx_oggi_e+1] if p is not None)
+        e_oggi = sum(e for e in e_det[idx_oggi_s:idx_oggi_e+1] if e is not None)
     
     bilancio += (p_oggi - e_oggi)
-    if p_oggi >= 3.5 or oggi_str == data_reset_manuale:
+    if p_oggi >= 3.0 or oggi_str == data_reset_manuale:
         bilancio = 0.0
     if bilancio > 0.0:
         bilancio = 0.0
+    bilancio = max(bilancio, -25.0)
     bil_oggi = bilancio
 
     # --- PREVISIONI (Ensemble) ---
@@ -172,21 +173,27 @@ def calcola_dati_orto():
     idx_domani_s = get_idx(f"{domani_str}T00:00")
     idx_domani_e = get_idx(f"{domani_str}T23:00")
     p_domani = calcola_eps_giorno(idx_domani_s, idx_domani_e)
-    e_domani = sum(e for e in e_det[idx_domani_s:idx_domani_e+1] if e is not None)
+    e_domani = 0.0
+    if idx_domani_s is not None and idx_domani_e is not None:
+        e_domani = sum(e for e in e_det[idx_domani_s:idx_domani_e+1] if e is not None)
     
     bil_domani = bil_oggi + p_domani - e_domani
-    if p_domani >= 3.5: bil_domani = 0.0
+    if p_domani >= 3.0: bil_domani = 0.0
     if bil_domani > 0.0: bil_domani = 0.0
+    bil_domani = max(bil_domani, -25.0)
 
     # Dopodomani
     idx_dopo_s = get_idx(f"{dopo_str}T00:00")
     idx_dopo_e = get_idx(f"{dopo_str}T23:00")
     p_dopo = calcola_eps_giorno(idx_dopo_s, idx_dopo_e)
-    e_dopo = sum(e for e in e_det[idx_dopo_s:idx_dopo_e+1] if e is not None)
+    e_dopo = 0.0
+    if idx_dopo_s is not None and idx_dopo_e is not None:
+        e_dopo = sum(e for e in e_det[idx_dopo_s:idx_dopo_e+1] if e is not None)
     
     bil_dopo = bil_domani + p_dopo - e_dopo
-    if p_dopo >= 3.5: bil_dopo = 0.0
+    if p_dopo >= 3.0: bil_dopo = 0.0
     if bil_dopo > 0.0: bil_dopo = 0.0
+    bil_dopo = max(bil_dopo, -25.0)
 
     return {
         "ieri_stress": valuta_stress(bil_ieri), "ieri_p": p_ieri, "ieri_e": e_ieri,
@@ -197,12 +204,11 @@ def calcola_dati_orto():
     }
 
 def genera_messaggio(d):
-    # Segnalazione discreta se il reset manuale ha influito sullo storico
     nota_reset = ""
     if d["data_reset"] in [d["ieri_str"], d["oggi_str"]]:
         nota_reset = "\n*(Storico bilanciato: irrigazione manuale registrata)*\n"
     
-    messaggio = f"""**BOLLETTINO SUOLO** 
+    messaggio = f"""**BOLLETTINO SUOLO**
 Rivoli (TO)
 {nota_reset}
 **STORICO RECENTE:**
@@ -234,7 +240,7 @@ def invia_telegram(messaggio, token, chat_id):
         print("Token o Chat ID mancanti.")
         return
 
-    # Tastiera interattiva
+    # Tastiera interattiva senza emoji extra
     tastiera = {
         "inline_keyboard": [
             [{"text": "Ho bagnato l'orto! (Azzera)", "callback_data": "reset_idrico"}]
@@ -252,7 +258,6 @@ def main():
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
-    # Controlliamo i click avvenuti dal bollettino precedente
     if token:
         controlla_pulsante_telegram(token)
 
