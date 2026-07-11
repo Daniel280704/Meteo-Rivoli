@@ -106,24 +106,30 @@ def stima_run_attuale(modello: str):
     return run_stimato, f"{run_stimato:02d}Z"
 
 
-def fetch_con_retry(url: str, params: dict, max_retries: int = 3) -> dict:
+def fetch_con_retry(url: str, params: dict, max_retries: int = 4) -> dict:
     for tentativo in range(max_retries):
         try:
-            resp = requests.get(url, params=params, timeout=30)
+            # Aumentato il timeout da 30 a 60 secondi per dare respiro ai server
+            resp = requests.get(url, params=params, timeout=60)
             resp.raise_for_status()
             return resp.json()
+        except requests.exceptions.Timeout:
+            print(f"\n⚠️ Il server di Open-Meteo è lento a rispondere (Timeout).", file=sys.stderr)
+            print(f"⏳ Attendo 6 secondi e ritento... (Tentativo {tentativo + 1} di {max_retries})", file=sys.stderr)
+            time.sleep(6)
         except requests.exceptions.HTTPError as e:
             if resp.status_code in [502, 503, 504]:
                 print(f"\n⚠️ Il server di Open-Meteo è occupato (Errore {resp.status_code}).", file=sys.stderr)
-                print(f"⏳ Attendo 4 secondi e ritento... (Tentativo {tentativo + 1} di {max_retries})", file=sys.stderr)
-                time.sleep(4)
+                print(f"⏳ Attendo 6 secondi e ritento... (Tentativo {tentativo + 1} di {max_retries})", file=sys.stderr)
+                time.sleep(6)
             else:
                 raise e
         except requests.exceptions.RequestException as e:
-            print(f"\n❌ Errore di connessione a internet: {e}", file=sys.stderr)
-            time.sleep(2)
+            print(f"\n❌ Errore di rete: {e}", file=sys.stderr)
+            print(f"⏳ Attendo 4 secondi e ritento... (Tentativo {tentativo + 1} di {max_retries})", file=sys.stderr)
+            time.sleep(4)
             
-    raise Exception("Impossibile scaricare i dati: il server è rimasto bloccato. Riprova più tardi.")
+    raise Exception("Impossibile scaricare i dati: il server è rimasto bloccato o è troppo lento. Riprova più tardi.")
 
 
 def fetch_data(lat: float, lon: float, giorni: int, modello: str) -> dict:
