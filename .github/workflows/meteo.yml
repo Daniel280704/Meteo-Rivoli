@@ -3,7 +3,7 @@ name: Bot Meteo Automazione
 on:
   schedule:
     # Orari in UTC (CEST - 2 ore). 
-    - cron: '0 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch: 
 
 jobs:
