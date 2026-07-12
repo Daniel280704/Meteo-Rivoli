@@ -4,16 +4,19 @@ import requests
 import sys
 import google.generativeai as genai
 from datetime import datetime, timedelta
-import locale
-
-# Tentativo di usare l'italiano per i giorni della settimana
-try:
-    locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
-except:
-    pass
 
 LAT = 45.073443
 LON = 7.543472
+
+# Dizionari per forzare l'italiano senza dipendere dal sistema operativo
+GIORNI_IT = {0: "lunedì", 1: "martedì", 2: "mercoledì", 3: "giovedì", 4: "venerdì", 5: "sabato", 6: "domenica"}
+MESI_IT = {1: "gennaio", 2: "febbraio", 3: "marzo", 4: "aprile", 5: "maggio", 6: "giugno", 
+           7: "luglio", 8: "agosto", 9: "settembre", 10: "ottobre", 11: "novembre", 12: "dicembre"}
+
+def formatta_data_it(dt):
+    giorno_sett = GIORNI_IT[dt.weekday()]
+    mese = MESI_IT[dt.month]
+    return f"{giorno_sett} {dt.day} {mese}"
 
 def gradi_a_direzione(gradi):
     if gradi is None: return "N/A"
@@ -21,13 +24,10 @@ def gradi_a_direzione(gradi):
     ix = int(round(gradi / 45.0))
     return dirs[ix % 8]
 
-def interpella_gemini(dati_meteo, info_giornaliere):
+def interpella_gemini(dati_meteo, info_giornaliere, oggi_str, domani_str):
     api_key = os.getenv("GEMINI_API_KEY")
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('models/gemini-3-flash-preview')    
-
-    oggi_str = datetime.now().strftime("%A %d %B")
-    domani_str = (datetime.now() + timedelta(days=1)).strftime("%A %d %B")
 
     prompt = f"""
     Sei un meteorologo professionista. Scrivi un bollettino meteo discorsivo per Rivoli (TO) per le prossime 48 ore.
@@ -95,7 +95,6 @@ def estrai_membri(hourly_data, prefisso_variabile, indice_ora):
     return valori
 
 def main():
-    # Aggiunti sunshine_duration e is_day per calcolare giorno/notte e soleggiamento
     dati_det = requests.get("https://api.open-meteo.com/v1/forecast", params={
         "latitude": LAT, "longitude": LON,
         "hourly": "temperature_2m,relative_humidity_2m,dew_point_2m,freezinglevel_height,wet_bulb_temperature_2m,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa,wind_direction_10m,wind_gusts_10m,sunshine_duration,is_day",
@@ -272,6 +271,12 @@ def main():
         if score == 1: return " (disagio moderato 🟠)" if is_summer else ""
         return " (assenza di disagio 🟢)" if is_summer else ""
 
+    dt_oggi = datetime.now()
+    dt_domani = dt_oggi + timedelta(days=1)
+    
+    oggi_str = formatta_data_it(dt_oggi)
+    domani_str = formatta_data_it(dt_domani)
+
     min_oggi, max_oggi = (min(temp_oggi), max(temp_oggi)) if temp_oggi else ("N/A", "N/A")
     min_domani, max_domani = (min(temp_domani), max(temp_domani)) if temp_domani else ("N/A", "N/A")
     
@@ -282,11 +287,11 @@ def main():
     str_wc_domani = " (freddo pungente causa vento)" if wind_chill_domani else ""
 
     info_giornaliere = f"""
-    {datetime.now().strftime("%A %d %B")}: Min {min_oggi}°C{str_wc_oggi}, Max {max_oggi}°C{str_disagio_oggi}
-    {(datetime.now() + timedelta(days=1)).strftime("%A %d %B")}: Min {min_domani}°C{str_wc_domani}, Max {max_domani}°C{str_disagio_domani}
+    {oggi_str}: Min {min_oggi}°C{str_wc_oggi}, Max {max_oggi}°C{str_disagio_oggi}
+    {domani_str}: Min {min_domani}°C{str_wc_domani}, Max {max_domani}°C{str_disagio_domani}
     """
 
-    bollettino = interpella_gemini(report, info_giornaliere)
+    bollettino = interpella_gemini(report, info_giornaliere, oggi_str, domani_str)
     
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
