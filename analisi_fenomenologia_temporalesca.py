@@ -2,7 +2,7 @@
 """
 Analizzatore Termodinamico e Cinematico Avanzato per Rischio Temporali
 Modello: ICON-D2 (Copertura 48h)
-- Trigger basato su Ensemble Mean (D2/CH2) > 1mm nella fascia 12:00 - 06:00
+- Trigger basato su singoli scenari: >= 1 spago D2 e >= 1 spago CH2 (Fallback: >= 2 spaghi D2) con precipitazioni >= 1mm
 - Estrazione setup condizionata alla finestra precipitativa
 - Calcolo del vettore di traslazione del sistema (Cloud Bearing Layer)
 - Analisi diagnostica tecnica tramite Gemini AI
@@ -48,8 +48,8 @@ def magnitudo_shear(u1, v1, u2, v2):
 def get_finestre_innesco_ensemble():
     """
     Analizza i membri EPS di D2 e CH2 per trovare i giorni in cui
-    la precipitazione media accumulata tra le 12:00 e le 06:00 del giorno dopo è >= 1.0 mm.
-    Ritorna un dizionario con i giorni attivi e gli indici orari in cui si concentra la pioggia.
+    c'è concordanza di innesco (almeno 1 spago >= 1mm su entrambi i modelli, 
+    o almeno 2 spaghi se CH2 è offline) tra le 12:00 e le 06:00 del giorno dopo.
     """
     try:
         params_base = {
@@ -58,24 +58,36 @@ def get_finestre_innesco_ensemble():
             "timezone": "Europe/Rome", "forecast_days": 3
         }
         
-        # Fetch Ensemble D2 e CH2
-        dati_d2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", 
-                               params={**params_base, "models": "icon_d2"}, timeout=30).json()
-        dati_ch2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", 
-                                params={**params_base, "models": "icon_ch2"}, timeout=30).json()
+        # Fetch Ensemble D2
+        resp_d2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", 
+                               params={**params_base, "models": "icon_d2"}, timeout=30)
+        resp_d2.raise_for_status()
+        dati_d2 = resp_d2.json()
+
+        # Fetch Ensemble CH2 con fallback
+        ch2_disponibile = False
+        dati_ch2 = {}
+        try:
+            resp_ch2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", 
+                                    params={**params_base, "models": "icon_ch2"}, timeout=30)
+            if resp_ch2.status_code == 200:
+                dati_ch2 = resp_ch2.json()
+                if 'hourly' in dati_ch2:
+                    ch2_disponibile = True
+        except:
+            pass
         
         orari = dati_d2.get('hourly', {}).get('time', [])
         
-        def calcola_media_oraria(hourly_data, indice_ora):
-            valori = []
+        def conta_membri_sopra_soglia(hourly_data, indice_ora, soglia):
+            if not hourly_data: return 0
+            count = 0
             for key, lst in hourly_data.items():
                 if key.startswith("precipitation_member") and indice_ora < len(lst):
                     val = lst[indice_ora]
-                    if val is not None: valori.append(val)
-            return sum(valori) / len(valori) if valori else 0.0
-
-        medie_d2 = [calcola_media_oraria(dati_d2.get('hourly', {}), i) for i in range(len(orari))]
-        medie_ch2 = [calcola_media_oraria(dati_ch2.get('hourly', {}), i) for i in range(len(orari))]
+                    if val is not None and val >= soglia:
+                        count += 1
+            return count
 
         finestre_attive = {}
         
@@ -86,21 +98,33 @@ def get_finestre_innesco_ensemble():
             dt_start = datetime.strptime(f"{data_str}T12:00", "%Y-%m-%dT%H:%M")
             dt_end = dt_start + timedelta(hours=18) # Fino alle 06:00 del giorno dopo
             
-            accumulo_d2 = 0
-            accumulo_ch2 = 0
             indici_finestra = []
+            innesco_valido = False
             
             for i, time_str in enumerate(orari):
                 dt_ora = datetime.fromisoformat(time_str)
                 if dt_start <= dt_ora <= dt_end:
-                    accumulo_d2 += medie_d2[i]
-                    accumulo_ch2 += medie_ch2[i]
-                    # Salviamo gli indici dove c'è il grosso del segnale precipitativo (> 0.2 mm orari nella media)
-                    if medie_d2[i] >= 0.2 or medie_ch2[i] >= 0.2:
+                    # Contiamo quanti scenari vedono almeno 1 mm nell'ora specifica
+                    membri_d2 = conta_membri_sopra_soglia(dati_d2.get('hourly', {}), i, 1.0)
+                    membri_ch2 = conta_membri_sopra_soglia(dati_ch2.get('hourly', {}), i, 1.0) if ch2_disponibile else 0
+                    
+                    # Contiamo quanti vedono un segnale debole per costruire la finestra oraria da analizzare
+                    membri_d2_deboli = conta_membri_sopra_soglia(dati_d2.get('hourly', {}), i, 0.2)
+                    membri_ch2_deboli = conta_membri_sopra_soglia(dati_ch2.get('hourly', {}), i, 0.2) if ch2_disponibile else 0
+
+                    if membri_d2_deboli >= 1 or membri_ch2_deboli >= 1:
                         indici_finestra.append(i)
                         
-            # Il trigger scatta se ENTRAMBI i modelli accumulano in media >= 1mm in quella finestra
-            if accumulo_d2 >= 1.0 and accumulo_ch2 >= 1.0 and indici_finestra:
+                    # Verifica condizione di innesco forte
+                    if ch2_disponibile:
+                        if membri_d2 >= 1 and membri_ch2 >= 1:
+                            innesco_valido = True
+                    else:
+                        if membri_d2 >= 2:
+                            innesco_valido = True
+
+            # Salviamo la finestra solo se la condizione di trigger è scattata in almeno una di queste ore
+            if innesco_valido and indici_finestra:
                 finestre_attive[data_str] = indici_finestra
 
         return finestre_attive
@@ -174,11 +198,11 @@ def interpella_gemini(report_tecnico, giorno_str):
     return response.text
 
 def main():
-    print("Analisi in corso: calcolo incrociato Ensemble Mean D2/CH2...")
+    print("Analisi in corso: ricerca inneschi da scenari Ensemble D2/CH2...")
     finestre_attive = get_finestre_innesco_ensemble()
     
     if not finestre_attive:
-        print("Analisi terminata: Nessuna forzante precipitativa media rilevante (\u2265 1mm) fiutata dai modelli per i prossimi giorni.")
+        print("Analisi terminata: Nessun segnale precipitativo rilevante fiutato dagli scenari per i prossimi giorni.")
         return
 
     print("Scaricamento profili termodinamici deterministici ICON-D2...")
@@ -222,7 +246,7 @@ def main():
             u_500.append(u); v_500.append(v)
 
         if not capes or max(capes) < 200:
-            print(f"[{data_str}] Saltato: Pioggia prevista, ma profilo termico stabile (Max CAPE < 200).")
+            print(f"[{data_str}] Saltato: Segnale precipitativo previsto, ma profilo termico stabile (Max CAPE < 200).")
             continue
 
         # Medie di finestra e picchi
