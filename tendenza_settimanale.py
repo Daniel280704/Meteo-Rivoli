@@ -26,8 +26,8 @@ def interpella_gemini(dati_tendenza):
     Sei un meteorologo professionista. Scrivi una PANORAMICA SINTETICA (tendenza meteo a medio termine) per Rivoli (TO) per i tre giorni successivi indicati in tabella.
     
     REGOLE DI SCRITTURA (TENDENZA SETTIMANALE):
-    1. NON usare elenchi puntati. Scrivi un singolo paragrafo fluido, sintetico e professionale. Non inserire alcun titolo, inizia direttamente con il testo.
-    2. Unisci i concetti: non fare una meccanica cronaca giorno per giorno, ma raggruppa le tendenze (es. "tra martedì e mercoledì il cielo sarà in prevalenza sereno con massime fino a 30 gradi, mentre da giovedì avremo maggiore instabilità nel pomeriggio...").
+    1. NON usare elenchi puntati. Struttura il testo in ESATTAMENTE TRE brevi paragrafi separati, dedicando un paragrafo a ciascuna giornata indicata. Non inserire alcun titolo o sottotitolo, inizia direttamente con il testo.
+    2. Descrizione giornaliera: fai una cronaca fluida, sintetica ma completa per il giorno in esame, nominando chiaramente la giornata all'inizio del rispettivo paragrafo (es. "Martedì il cielo si presenterà in prevalenza sereno con massime fino a 30 gradi...").
     
     REGOLA NUVOLOSITÀ:
     3. Integra lo stato del 'Cielo' fornito nella tabella in modo discorsivo.
