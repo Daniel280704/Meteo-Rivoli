@@ -3,7 +3,7 @@ name: Bollettino Agrometeo Orto
 on:
   schedule:
     # 19:00 ora locale estiva = 17:00 UTC
-    - cron: '0 17 * * *'
+    - cron: '13 17 * * *'
   workflow_dispatch: 
 
 jobs:
