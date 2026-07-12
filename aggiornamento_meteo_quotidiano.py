@@ -71,7 +71,7 @@ def interpella_gemini(dati_testuali, oggi_str, domani_str):
     6. DISAGIO TERMICO: Quando citi la temperatura massima, affianca ESATTAMENTE la dicitura sul disagio che trovi nei dati (es. inserisci testualmente "(disagio marcato 🟠)").
     
     ESEMPIO DI STILE DA IMITARE ALLA PERFEZIONE:
-    "La giornata di domenica si abra con condizioni di stabilità atmosferica. Le temperature minime si assestano sui 19°C. Durante le ore di luce il cielo si manterrà in prevalenza sereno, favorendo un ampio soleggiamento che porterà la massima a 33°C (disagio marcato 🟠). Nel tardo pomeriggio parziale aumento della nuvolosità ma senza fenomeni di rilievo."
+    "La giornata di domenica si apre con condizioni di stabilità atmosferica. Le temperature minime si assestano sui 19°C. Durante le ore di luce il cielo si manterrà in prevalenza sereno, favorendo un ampio soleggiamento che porterà la massima a 33°C (disagio marcato 🟠). Nel tardo pomeriggio parziale aumento della nuvolosità ma senza fenomeni di rilievo."
     
     DATI GIORNALIERI DA TRASFORMARE IN TESTO:
     {dati_testuali}
@@ -125,6 +125,32 @@ def main():
     
     sunrise_str = dati_det.get('daily', {}).get('sunrise', [])
     sunset_str = dati_det.get('daily', {}).get('sunset', [])
+
+    # --- Pre-calcolo medie di soleggiamento (Mattino e Pomeriggio) ---
+    medie_sole = {0: {'mattino': [], 'pomeriggio': []}, 1: {'mattino': [], 'pomeriggio': []}}
+    for i in range(len(orari)):
+        ora_dt = datetime.fromisoformat(orari[i])
+        giorno_idx = 0 if i < 24 else 1
+        alba = datetime.fromisoformat(sunrise_str[giorno_idx])
+        tramonto = datetime.fromisoformat(sunset_str[giorno_idx])
+        alba_piu_2 = alba + timedelta(hours=2)
+        tramonto_meno_2 = tramonto - timedelta(hours=2)
+        
+        sun_minuti = (h_det.get('sunshine_duration', [])[i] or 0) / 60
+        
+        # Mattino: da 2h dopo l'alba fino alle 12:59
+        if alba_piu_2 <= ora_dt and ora_dt.hour < 13:
+            medie_sole[giorno_idx]['mattino'].append(sun_minuti)
+        # Pomeriggio: dalle 13:00 fino a 2h prima del tramonto
+        elif ora_dt.hour >= 13 and ora_dt <= tramonto_meno_2:
+            medie_sole[giorno_idx]['pomeriggio'].append(sun_minuti)
+
+    # Calcoliamo le medie effettive per ciascun blocco
+    for g in [0, 1]:
+        for p in ['mattino', 'pomeriggio']:
+            lst = medie_sole[g][p]
+            medie_sole[g][p] = sum(lst) / len(lst) if lst else 0
+    # -----------------------------------------------------------------
 
     sintesi_oggi = []
     sintesi_domani = []
@@ -230,12 +256,17 @@ def main():
         
         cielo = ""
         if alba_piu_2 <= ora_dt <= tramonto_meno_2:
-            sun_minuti = (h_det.get('sunshine_duration', [])[i] or 0) / 60
-            if sun_minuti < 5: cielo = "molto nuvoloso o coperto"
-            elif sun_minuti <= 15: cielo = "irregolarmente o molto nuvoloso"
-            elif sun_minuti <= 30: cielo = "parzialmente o irregolarmente nuvoloso"
-            elif sun_minuti <= 45: cielo = "parzialmente nuvoloso"
-            elif sun_minuti <= 55: cielo = "poco nuvoloso"
+            # Selezione della media corretta (mattino o pomeriggio) in base all'ora
+            if ora_dt.hour < 13:
+                avg_sun = medie_sole[giorno_idx]['mattino']
+            else:
+                avg_sun = medie_sole[giorno_idx]['pomeriggio']
+                
+            if avg_sun < 5: cielo = "molto nuvoloso o coperto"
+            elif avg_sun <= 15: cielo = "irregolarmente o molto nuvoloso"
+            elif avg_sun <= 30: cielo = "parzialmente o irregolarmente nuvoloso"
+            elif avg_sun <= 45: cielo = "parzialmente nuvoloso"
+            elif avg_sun <= 55: cielo = "poco nuvoloso"
             else: cielo = "sereno"
 
         nebbia = ""
