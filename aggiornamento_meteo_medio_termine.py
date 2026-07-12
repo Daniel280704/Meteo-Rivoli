@@ -76,19 +76,19 @@ def main():
     estate = mese_corrente in [5, 6, 7, 8, 9, 10]
     
     try:
-        # Richiesta a 5 giorni, forzando ICON-CH2
+        # Richiesta a 5 giorni utilizzando ICON Seamless (unisce D2 ed EU)
         dati_det = requests.get("https://api.open-meteo.com/v1/forecast", params={
             "latitude": LAT, "longitude": LON,
             "hourly": "wind_direction_10m,cape,sunshine_duration,apparent_temperature,temperature_1000hPa,temperature_975hPa,temperature_950hPa,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa",
             "daily": "sunrise,sunset",
-            "models": "icon_ch2",
+            "models": "icon_seamless",
             "timezone": "Europe/Rome", "forecast_days": 5
         }, timeout=10).json()
 
         dati_eps = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", params={
             "latitude": LAT, "longitude": LON,
             "hourly": "temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,dew_point_2m",
-            "models": "icon_ch2",
+            "models": "icon_seamless",
             "timezone": "Europe/Rome", "forecast_days": 5
         }, timeout=10).json()
             
@@ -100,33 +100,24 @@ def main():
     h_eps = dati_eps.get('hourly', {})
     orari = h_det.get('time', [])
     
-    # Salvataggio se ICON-CH2 restituisce solo 48 ore (spesso accade coi modelli ad alta risoluzione)
-    if len(orari) <= 48:
-        print("Attenzione: Open-Meteo ha restituito solo 48h per ICON-CH2. Il medio termine non è disponibile con questo modello.")
-        # Se capita, nel file potresti sostituire "icon_ch2" con "icon_eu" per garantire la profondità a 5 giorni.
-        return
-
     sunrise_str = dati_det.get('daily', {}).get('sunrise', [])
     sunset_str = dati_det.get('daily', {}).get('sunset', [])
 
-    # Strutture per i Giorni 3 (indice 2), 4 (indice 3), 5 (indice 4)
     sintesi = {2: [], 3: [], 4: []}
     t_min = {2: 100, 3: 100, 4: 100}
     t_max = {2: -100, 3: -100, 4: -100}
     dew_max = {2: -100, 3: -100, 4: -100}
     windchill_min = {2: 100, 3: 100, 4: 100}
     
-    # Pre-carichiamo il dew point della 47esima ora per il controllo Föhn sulla 48esima
     dew_point_prev = None
     if len(orari) > 47:
         dew_membri_47 = [h_eps[k][47] for k in h_eps if k.startswith('dew_point_2m_member')]
         dew_point_prev = media_lista(dew_membri_47)
 
-    # LOOP DALLE 48 ORE FINO ALLE 120 (Giorno 3, 4, 5)
     for i in range(48, min(120, len(orari))):
         ora_dt = datetime.fromisoformat(orari[i])
         ora_solare = ora_dt.hour
-        giorno_idx = i // 24 # 2 = Dopodomani, 3 = Tra 3 giorni, 4 = Tra 4 giorni
+        giorno_idx = i // 24
         
         t_membri = [h_eps[k][i] for k in h_eps if k.startswith('temperature_2m_member')]
         t_media = media_lista(t_membri)
@@ -146,7 +137,6 @@ def main():
         w_dir = h_det.get('wind_direction_10m', [])[i] if i < len(h_det.get('wind_direction_10m', [])) else None
         w_dir_str = gradi_a_direzione(w_dir)
         
-        # INSTABILITÀ BASATA *SOLO* SULLE ENS DI ICON-CH2
         prec_membri = [h_eps[k][i] for k in h_eps if k.startswith('precipitation_member')]
         prec_media = sum([v for v in prec_membri if v is not None]) / len(prec_membri) if prec_membri else 0
         
@@ -216,7 +206,6 @@ def main():
         if abs(dew_media - t_media) <= 1 and ur_media >= 95 and w_spd_media < 10:
             nebbia = "possibile formazione di nebbia"
 
-        # AGGIORNAMENTO ESTREMI TERMICI
         t_min[giorno_idx] = min(t_min[giorno_idx], t_media)
         t_max[giorno_idx] = max(t_max[giorno_idx], t_media)
         if estate: dew_max[giorno_idx] = max(dew_max[giorno_idx], dew_media)
@@ -232,7 +221,6 @@ def main():
         
         sintesi[giorno_idx].append(record)
 
-    # CALCOLO DISAGI
     disagio = {2: "", 3: "", 4: ""}
     for g in [2, 3, 4]:
         if estate and t_max[g] != -100:
@@ -249,7 +237,6 @@ def main():
         4: formatta_data_it(dt_oggi + timedelta(days=4))
     }
 
-    # ASSEMBLAGGIO TESTO
     testo_per_ia = ""
     for g in [2, 3, 4]:
         if not sintesi[g]: continue
