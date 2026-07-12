@@ -15,6 +15,13 @@ except:
 LAT = 45.073443
 LON = 7.543472
 
+def gradi_a_direzione(gradi):
+    if gradi is None: return "N/A"
+    dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'N']
+    # Divide il cerchio di 360° in 8 spicchi da 45°
+    ix = int(round(gradi / 45.0))
+    return dirs[ix % 8]
+
 def interpella_gemini(dati_meteo, info_giornaliere):
     api_key = os.getenv("GEMINI_API_KEY")
     genai.configure(api_key=api_key)
@@ -37,30 +44,31 @@ def interpella_gemini(dati_meteo, info_giornaliere):
     REGOLA PRECIPITAZIONI E PROBABILITÀ (CRITICA):
     3. Analizza la colonna 'Probabilità'. Se indica 'Assente', IGNORA TOTALMENTE il tema della pioggia. Se invece è presente:
        - STAGIONALITÀ: Tra MARZO e OTTOBRE usa "rovesci" o "temporali". Tra NOVEMBRE e FEBBRAIO usa "piogge" o "precipitazioni".
-       - FORMATO ORARIO: Raggruppa gli orari indicando le fasce coperte dai fenomeni (es. "tra le 16 e le 21"). NON esprimere le ore come 16:00, usa solo il numero intero (es. le 16, le 18).
+       - FORMATO ORARIO: Raggruppa gli orari (es. "tra le 16 e le 21"). NON esprimere le ore come 16:00, usa solo il numero intero.
        - Riporta il livello di rischio in base a quanto indicato in tabella.
     
-    REGOLA NEVE E INVERNO (INVERSIONI TERMICHE E WET BULB):
-    4. Se sono previste precipitazioni e fa freddo, analizza scrupolosamente il profilo verticale:
-       - INVERSIONE TERMICA E GELICIDIO: Controlla le temperature in quota (T_925hPa ~800m, T_900hPa ~1000m, T_850hPa ~1500m, T_800hPa ~2000m). Se al suolo la temperatura è rigida (es. <= 1°C) ma in ALMENO UNA di queste quote la temperatura è positiva (es. > 1°C), c'è un'inversione termica in atto. NON prevedere neve, ma avvisa del grave rischio di pioggia congelantesi (gelicidio).
-       - BULBO UMIDO (Wet_Bulb): Se l'aria è positiva (es. +2/+3°C) ma il Wet_Bulb è <= 0°C, annuncia che le precipitazioni intense potrebbero far crollare la temperatura e trasformare la pioggia in neve.
-       - Se l'intera colonna è favorevole (Z.Termico basso, T su tutte le quote <= 0°C, Wet Bulb <= 0°C), avvisa della probabilità di neve.
+    REGOLA NEVE E INVERNO (INVERSIONI E WET BULB):
+    4. Se sono previste precipitazioni e fa freddo, analizza il profilo verticale:
+       - INVERSIONE TERMICA E GELICIDIO: Se al suolo la temperatura è rigida (es. <= 1°C) ma in ALMENO UNA quota (T_925, T_900, T_850, T_800) la temperatura è positiva, c'è un'inversione termica. NON prevedere neve, avvisa del grave rischio di pioggia congelantesi (gelicidio).
+       - BULBO UMIDO (Wet_Bulb): Se l'aria è positiva ma il Wet_Bulb è <= 0°C, annuncia che le precipitazioni intense potrebbero far crollare la quota neve.
+       - NEVE: Se Z.Termico basso, T su tutte le quote <= 0°C e Wet Bulb <= 0°C, avvisa della probabilità di neve.
+       
+    REGOLA NEBBIA E GELATE NOTTURNE:
+    5. NEBBIA: Se l'UR% > 95% (quindi T e Dew Point quasi coincidono) e il vento è calmo (< 5 km/h), segnala possibili foschie o banchi di nebbia.
+       GELATE: In inverno, se di notte/primo mattino la T_Media scende a <= 0°C e l'umidità è medio-alta, avvisa esplicitamente del rischio di gelate o brinate al suolo.
+       
+    REGOLA VENTO: FÖHN E CORRENTI ORIENTALI:
+    6. FÖHN: Se noti raffiche (Raffiche) vivaci (> 30 km/h) con direzione Ovest o Nord-Ovest (W/NW) accompagnate da un "crollo" dell'umidità (UR%) e del Dew Point, annuncia in modo discorsivo l'ingresso del Föhn (vento di ricaduta secco e mite).
+       EST: Se il vento soffia in modo sostenuto da Est (E/NE/SE) e l'umidità è alta, segnala flussi umidi orientali (che a ridosso delle Alpi portano nuvolosità da stau o freddo continentale).
     
     REGOLE DI DISAGIO TERMICO (BIOMETEOROLOGIA):
-    5. AFA E CALDO:
-       - DISAGIO MODERATO: (T_Max >= 28°C e Dew >= 15°C) OPPURE (T_Max >= 25°C e Dew >= 20°C).
-       - FORTE DISAGIO: (T_Max >= 32°C e Dew >= 20°C) OPPURE (T_Max >= 30°C e Dew >= 24°C).
-       - Aggiungi il livello ESCLUSIVAMENTE tra parentesi dopo la massima giornaliera, senza dare ulteriori spiegazioni discorsive. Esempio: "...raggiungendo i 33°C (Forte Disagio)."
-       
-    6. WIND CHILL: Se (T_Media <= 8°C e Vento_Medio >= 15 km/h), spiega che il vento renderà il freddo più pungente.
+    7. AFA/CALDO: Inserisci il livello (Disagio Moderato o Forte Disagio) ESCLUSIVAMENTE tra parentesi dopo la T max, senza spiegarne i motivi.
+       WIND CHILL: Se (T_Media <= 8°C e Vento >= 15 km/h), spiega che il vento renderà il freddo pungente.
     
-    REGOLA NEBBIA/BRINA:
-    7. Menziona foschie/nebbie SOLO per: aria stagnante (Vento_Medio < 5 km/h), T_Media notturna <= 0°C, e UR% vicina al 100%.
+    DIVIETO SUI TERMINI TECNICI:
+    8. È severamente VIETATO menzionare i nomi delle colonne della tabella (come "T_Media", "Wet_Bulb", "T_925hPa", "Dew").
     
-    DIVIETO ASSOLUTO SUI TERMINI TECNICI:
-    8. È severamente VIETATO menzionare i nomi delle colonne della tabella (come "T_Media", "Probabilità", "Wet_Bulb", "Z.Termico", "T_925hPa", ecc.). Fai finta di aver analizzato i modelli di persona e usa un linguaggio discorsivo e comprensibile al pubblico.
-
-    DATI ANALITICI ORARI (Ora | T_Media | UR% | Dew | Probabilità | Vento | Z.Termico | Wet_Bulb | T_925hPa | T_900hPa | T_850hPa | T_800hPa):
+    DATI ANALITICI ORARI (Ora | T_Media | UR% | Dew | Prob | Vento | Raffiche | Dir_Vento | Z.Termico | Wet_Bulb | T_925hPa | T_900hPa | T_850hPa | T_800hPa):
     {dati_meteo}
     """
 
@@ -79,10 +87,10 @@ def estrai_membri(hourly_data, prefisso_variabile, indice_ora):
     return valori
 
 def main():
-    # Aggiunte le quote 925hPa (~800m) e 800hPa (~2000m)
+    # Aggiunti parametri per Vento (Raffiche e Direzione) dalla corsa deterministica
     dati_det = requests.get("https://api.open-meteo.com/v1/forecast", params={
         "latitude": LAT, "longitude": LON,
-        "hourly": "temperature_2m,relative_humidity_2m,dew_point_2m,freezinglevel_height,wet_bulb_temperature_2m,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa",
+        "hourly": "temperature_2m,relative_humidity_2m,dew_point_2m,freezinglevel_height,wet_bulb_temperature_2m,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa,wind_direction_10m,wind_gusts_10m",
         "models": "icon_d2",
         "timezone": "Europe/Rome", "forecast_days": 2
     }).json()
@@ -106,12 +114,11 @@ def main():
     hourly_ch2 = dati_eps_ch2.get('hourly', {})
     orari = hourly_det.get('time', [])
     
-    report = "Ora | T_Media | UR% | Dew | Probabilità | Vento | Z.Termico | Wet_Bulb | T_925hPa | T_900hPa | T_850hPa | T_800hPa\n"
+    report = "Ora | T_Media | UR% | Dew | Prob | Vento | Raffiche | Dir_Vento | Z.Termico | Wet_Bulb | T_925 | T_900 | T_850 | T_800\n"
     
     temp_oggi = []
     temp_domani = []
 
-    # Liste dati deterministici
     t_det_list = hourly_det.get('temperature_2m', [])
     ur_list = hourly_det.get('relative_humidity_2m', [])
     dew_list = hourly_det.get('dew_point_2m', [])
@@ -121,8 +128,11 @@ def main():
     t900_list = hourly_det.get('temperature_900hPa', [])
     t850_list = hourly_det.get('temperature_850hPa', [])
     t800_list = hourly_det.get('temperature_800hPa', [])
+    
+    # Nuove liste vento
+    wd_list = hourly_det.get('wind_direction_10m', [])
+    wg_list = hourly_det.get('wind_gusts_10m', [])
 
-    # PRE-CALCOLO Probabilità per creare le "Finestre di Supporto"
     p1_d2_all, p3_d2_all, p5_d2_all = [], [], []
     p1_ch_all, p3_ch_all, p5_ch_all = [], [], []
 
@@ -152,7 +162,6 @@ def main():
         w_d2_mem = estrai_membri(hourly_d2, "wind_speed_10m_member", i)
         w_ch2_mem = estrai_membri(hourly_ch2, "wind_speed_10m_member", i)
 
-        # Calcolo medie dinamiche
         valori_temp = []
         if t_d2_mem: valori_temp.append(sum(t_d2_mem) / len(t_d2_mem))
         if t_ch2_mem: valori_temp.append(sum(t_ch2_mem) / len(t_ch2_mem))
@@ -168,20 +177,23 @@ def main():
         ur = ur_list[i] if i < len(ur_list) else 0
         dew = dew_list[i] if i < len(dew_list) else 0
 
-        # Parametri invernali e stratigrafia termica
         z_term_val = z_term_list[i] if i < len(z_term_list) else "N/A"
         wet_bulb_val = wet_bulb_list[i] if i < len(wet_bulb_list) else "N/A"
         t925_val = t925_list[i] if i < len(t925_list) else "N/A"
         t900_val = t900_list[i] if i < len(t900_list) else "N/A"
         t850_val = t850_list[i] if i < len(t850_list) else "N/A"
         t800_val = t800_list[i] if i < len(t800_list) else "N/A"
+        
+        # Estrazione e conversione direzione e raffiche
+        wd_val = wd_list[i] if i < len(wd_list) else None
+        dir_str = gradi_a_direzione(wd_val)
+        wg_val = round(wg_list[i]) if i < len(wg_list) else 0
 
         if i < 24:
             temp_oggi.append(temp_finale)
         else:
             temp_domani.append(temp_finale)
 
-        # Finestra oraria sfasata (+/- 3 ore) per la convettività
         start_j = max(0, i - 3)
         end_j = min(48, i + 4)
         
@@ -191,7 +203,7 @@ def main():
         valido = False
         if p1_d2_all[i] >= 10 and ch2_support_for_d2: valido = True
         if p1_ch_all[i] >= 10 and d2_support_for_ch: valido = True
-        if not any(p1_ch_all) and p1_d2_all[i] >= 10: valido = True # Fallback
+        if not any(p1_ch_all) and p1_d2_all[i] >= 10: valido = True 
 
         prob = "Assente"
         if valido:
@@ -208,8 +220,7 @@ def main():
             elif max3 >= 10: prob = f"{livello(max3)} pioggia moderata o instabilità sparsa"
             elif max1 >= 10: prob = f"{livello(max1)} pioggia debole o instabilità isolata"
 
-        # Popolamento stringa dati con le nuove colonne
-        report += f"{orari[i][-5:]} | {temp_finale}°C | {ur}% | {dew}°C | {prob} | {vento_finale} km/h | {z_term_val}m | {wet_bulb_val}°C | {t925_val}°C | {t900_val}°C | {t850_val}°C | {t800_val}°C\n"
+        report += f"{orari[i][-5:]} | {temp_finale}°C | {ur}% | {dew}°C | {prob} | {vento_finale} km/h | {wg_val} km/h | {dir_str} | {z_term_val}m | {wet_bulb_val}°C | {t925_val}°C | {t900_val}°C | {t850_val}°C | {t800_val}°C\n"
 
     min_oggi, max_oggi = (min(temp_oggi), max(temp_oggi)) if temp_oggi else ("N/A", "N/A")
     min_domani, max_domani = (min(temp_domani), max(temp_domani)) if temp_domani else ("N/A", "N/A")
