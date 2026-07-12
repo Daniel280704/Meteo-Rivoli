@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
 Analizzatore Termodinamico e Cinematico Avanzato per Rischio Temporali
-*** VERSIONE DI TEST - TRIGGER FORZATO ***
-- Il controllo Ensemble è disattivato.
-- L'analisi viene eseguita forzatamente per la fascia oraria 17:00 - 20:00 del giorno corrente.
-- Output ripristinato su Telegram.
+Modello: ICON-D2 (Copertura 48h)
+- Trigger basato su Ensemble Mean (D2/CH2) > 1mm nella fascia 12:00 - 06:00
+- Estrazione setup condizionata alla finestra precipitativa
+- Calcolo del vettore di traslazione del sistema (Cloud Bearing Layer)
+- Analisi diagnostica tecnica tramite Gemini AI
 """
 
 import os
@@ -43,6 +44,69 @@ def magnitudo_shear(u1, v1, u2, v2):
     if None in (u1, v1, u2, v2):
         return None
     return math.sqrt((u2 - u1)**2 + (v2 - v1)**2)
+
+def get_finestre_innesco_ensemble():
+    """
+    Analizza i membri EPS di D2 e CH2 per trovare i giorni in cui
+    la precipitazione media accumulata tra le 12:00 e le 06:00 del giorno dopo è >= 1.0 mm.
+    Ritorna un dizionario con i giorni attivi e gli indici orari in cui si concentra la pioggia.
+    """
+    try:
+        params_base = {
+            "latitude": LAT, "longitude": LON,
+            "hourly": "precipitation",
+            "timezone": "Europe/Rome", "forecast_days": 3
+        }
+        
+        # Fetch Ensemble D2 e CH2
+        dati_d2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", 
+                               params={**params_base, "models": "icon_d2"}, timeout=30).json()
+        dati_ch2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", 
+                                params={**params_base, "models": "icon_ch2"}, timeout=30).json()
+        
+        orari = dati_d2.get('hourly', {}).get('time', [])
+        
+        def calcola_media_oraria(hourly_data, indice_ora):
+            valori = []
+            for key, lst in hourly_data.items():
+                if key.startswith("precipitation_member") and indice_ora < len(lst):
+                    val = lst[indice_ora]
+                    if val is not None: valori.append(val)
+            return sum(valori) / len(valori) if valori else 0.0
+
+        medie_d2 = [calcola_media_oraria(dati_d2.get('hourly', {}), i) for i in range(len(orari))]
+        medie_ch2 = [calcola_media_oraria(dati_ch2.get('hourly', {}), i) for i in range(len(orari))]
+
+        finestre_attive = {}
+        
+        # Raggruppa l'analisi per "giorni di partenza" (dalle 12:00 alle 06:00 del giorno dopo)
+        giorni_unici = sorted(list(set([time_str.split("T")[0] for time_str in orari])))
+        
+        for data_str in giorni_unici:
+            dt_start = datetime.strptime(f"{data_str}T12:00", "%Y-%m-%dT%H:%M")
+            dt_end = dt_start + timedelta(hours=18) # Fino alle 06:00 del giorno dopo
+            
+            accumulo_d2 = 0
+            accumulo_ch2 = 0
+            indici_finestra = []
+            
+            for i, time_str in enumerate(orari):
+                dt_ora = datetime.fromisoformat(time_str)
+                if dt_start <= dt_ora <= dt_end:
+                    accumulo_d2 += medie_d2[i]
+                    accumulo_ch2 += medie_ch2[i]
+                    # Salviamo gli indici dove c'è il grosso del segnale precipitativo (> 0.2 mm orari nella media)
+                    if medie_d2[i] >= 0.2 or medie_ch2[i] >= 0.2:
+                        indici_finestra.append(i)
+                        
+            # Il trigger scatta se ENTRAMBI i modelli accumulano in media >= 1mm in quella finestra
+            if accumulo_d2 >= 1.0 and accumulo_ch2 >= 1.0 and indici_finestra:
+                finestre_attive[data_str] = indici_finestra
+
+        return finestre_attive
+    except Exception as e:
+        print(f"⚠️ Errore nel download Ensemble: {e}")
+        return {}
 
 def fetch_dati_convezione_d2():
     """Scarica il profilo verticale dal modello deterministico ICON-D2."""
@@ -90,7 +154,7 @@ def interpella_gemini(report_tecnico, giorno_str):
     Sei un meteorologo esperto in dinamiche convettive. Il tuo compito è stilare un bollettino di analisi 
     tecnica sul TIPO DI SETUP a disposizione dell'atmosfera per il giorno {giorno_str} a Rivoli (TO).
 
-    DATI ESTRATTI NELLA FINESTRA PRECIPITATIVA FORZATA DI TEST (Media dei parametri):
+    DATI ESTRATTI NELLA FINESTRA PRECIPITATIVA (Media dei parametri):
     {report_tecnico}
 
     REGOLE RIGOROSE:
@@ -110,31 +174,20 @@ def interpella_gemini(report_tecnico, giorno_str):
     return response.text
 
 def main():
-    print("=== MODALITÀ TEST ATTIVA ===")
-    print("Salto il controllo precipitazioni ENS. Scaricamento profili ICON-D2 in corso...")
-    hourly = fetch_dati_convezione_d2()
+    print("Analisi in corso: calcolo incrociato Ensemble Mean D2/CH2...")
+    finestre_attive = get_finestre_innesco_ensemble()
     
-    # --- BLOCCO FORZATURA FINESTRA ---
-    # Cerchiamo la fascia 17:00 - 20:00 del giorno corrente.
-    oggi_str = datetime.now().strftime("%Y-%m-%d")
-    indici_forzati = []
-    
-    for i, time_str in enumerate(hourly['time']):
-        dt = datetime.fromisoformat(time_str)
-        if dt.strftime("%Y-%m-%d") == oggi_str and 17 <= dt.hour <= 20:
-            indici_forzati.append(i)
-
-    if not indici_forzati:
-        print(f"Errore: Impossibile trovare la fascia 17-20 per {oggi_str} nei dati del modello.")
+    if not finestre_attive:
+        print("Analisi terminata: Nessuna forzante precipitativa media rilevante (\u2265 1mm) fiutata dai modelli per i prossimi giorni.")
         return
 
-    finestre_attive = {oggi_str: indici_forzati}
-    print(f"⚠️ FORZATURA: Analisi impostata artificialmente su {oggi_str} fascia 17:00 - 20:00.")
-    # --- FINE BLOCCO FORZATURA ---
-
-    messaggio_telegram = "🌩 **[TEST] ANALISI SETUP CONVETTIVO CONDIZIONALE**\n\n"
+    print("Scaricamento profili termodinamici deterministici ICON-D2...")
+    hourly = fetch_dati_convezione_d2()
+    
+    messaggio_telegram = "🌩 **ANALISI SETUP CONVETTIVO CONDIZIONALE**\n\n"
 
     for data_str, indici_ore in finestre_attive.items():
+        # Estraiamo i parametri medi nella finestra in cui è attesa la fenomenologia
         capes, cins, lrs = [], [], []
         u_10, v_10, u_850, v_850, u_500, v_500 = [], [], [], [], [], []
         lcls, rh700s, zts = [], [], []
@@ -168,26 +221,26 @@ def main():
             u, v = scomposizione_vettoriale(hourly['wind_speed_500hPa'][idx], hourly['wind_direction_500hPa'][idx])
             u_500.append(u); v_500.append(v)
 
-        # Nella versione di test, non blocchiamo l'esecuzione se c'è poco CAPE, 
-        # altrimenti se oggi la colonna è stabile lo script si fermerebbe.
-        max_cape = max(capes) if capes else 0
-        if max_cape < 200:
-            print(f"Nota: Il CAPE reale è molto basso ({max_cape} J/kg). Essendo un test, procedo comunque con l'analisi dei vettori.")
+        if not capes or max(capes) < 200:
+            print(f"[{data_str}] Saltato: Pioggia prevista, ma profilo termico stabile (Max CAPE < 200).")
+            continue
 
+        # Medie di finestra e picchi
+        max_cape = max(capes)
         media_cin = sum(cins)/len(cins) if cins else 0
         media_lr = sum(lrs)/len(lrs) if lrs else None
         media_lcl = sum(lcls)/len(lcls) if lcls else None
         media_rh700 = sum(rh700s)/len(rh700s) if rh700s else None
         media_zt = sum(zts)/len(zts) if zts else None
         
-        avg_u10, avg_v10 = sum(u_10)/len(u_10) if u_10 else 0, sum(v_10)/len(v_10) if v_10 else 0
-        avg_u850, avg_v850 = sum(u_850)/len(u_850) if u_850 else 0, sum(v_850)/len(v_850) if v_850 else 0
-        avg_u500, avg_v500 = sum(u_500)/len(u_500) if u_500 else 0, sum(v_500)/len(v_500) if v_500 else 0
+        avg_u10, avg_v10 = sum(u_10)/len(u_10), sum(v_10)/len(v_10)
+        avg_u850, avg_v850 = sum(u_850)/len(u_850), sum(v_850)/len(v_850)
+        avg_u500, avg_v500 = sum(u_500)/len(u_500), sum(v_500)/len(v_500)
         
         dls = magnitudo_shear(avg_u10, avg_v10, avg_u500, avg_v500)
         lls = magnitudo_shear(avg_u10, avg_v10, avg_u850, avg_v850)
         
-        # Calcolo Cloud Bearing Layer
+        # Calcolo Cloud Bearing Layer (Flusso medio tra 850 e 500 hPa)
         u_cbl = (avg_u850 + avg_u500) / 2
         v_cbl = (avg_v850 + avg_v500) / 2
         traslazione_kmh, traslazione_dir = calcola_magnitudo_direzione(u_cbl, v_cbl)
@@ -195,7 +248,7 @@ def main():
         stima_g = stima_grandine_python(max_cape, dls, media_lr, media_zt)
 
         report_dati = f"""
-        Finestra FORZATA: Da {datetime.fromisoformat(hourly['time'][indici_ore[0]]).strftime('%H:%M')} a {datetime.fromisoformat(hourly['time'][indici_ore[-1]]).strftime('%H:%M')}
+        Finestra analizzata: Da {datetime.fromisoformat(hourly['time'][indici_ore[0]]).strftime('%H:%M')} a {datetime.fromisoformat(hourly['time'][indici_ore[-1]]).strftime('%H:%M')}
         Max CAPE: {formatta_sicuro(max_cape, "{:.0f}")} J/kg
         CIN Medio: {formatta_sicuro(media_cin, "{:.0f}")} J/kg
         LCL (Base Nubi): {formatta_sicuro(media_lcl, "{:.0f}")} m
@@ -208,12 +261,12 @@ def main():
         """
         
         giorno_formattato = datetime.strptime(data_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-        print(f"[{giorno_formattato}] Elaborazione responso diagnostico tramite Gemini per il setup forzato...")
+        print(f"[{giorno_formattato}] Elaborazione responso diagnostico tramite Gemini...")
         responso = interpella_gemini(report_dati, giorno_formattato)
         
-        messaggio_telegram += f"📅 **Target: {giorno_formattato} (TEST)**\n\n{responso}\n\n➖➖➖➖➖➖➖➖➖➖\n\n"
+        messaggio_telegram += f"📅 **Target: {giorno_formattato}**\n\n{responso}\n\n➖➖➖➖➖➖➖➖➖➖\n\n"
 
-    # Invio Telegram ripristinato
+    # Invio Telegram
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
@@ -221,7 +274,7 @@ def main():
         res = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
                       data={"chat_id": chat_id, "text": messaggio_telegram, "parse_mode": "Markdown"})
         if res.status_code == 200:
-            print("Analisi convettiva (TEST) inviata con successo su Telegram!")
+            print("Analisi convettiva inviata con successo su Telegram!")
         else:
             print(f"Errore invio Telegram: {res.text}")
     else:
