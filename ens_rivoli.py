@@ -453,7 +453,10 @@ def main():
         dati_det = fetch_deterministico(args.lat, args.lon, giorni, args.modello)
     except Exception as e:
         print(f"❌ Elaborazione interrotta per il modello {args.modello.upper()}: {e}", file=sys.stderr)
-        sys.exit(1)
+        nome_modello = MODELLI[args.modello]["nome"]
+        invia_messaggio_testo_telegram(f"Il modello {nome_modello} non ha comunicato i dati (errore server).")
+        # Esco pulito (0) per permettere a GitHub Actions di proseguire con l'aggiornamento degli altri hash
+        sys.exit(0)
 
     # Verifica se i dati sono cambiati rispetto all'ultima volta
     is_nuovo = verifica_dati_nuovi(dati, dati_det, args.modello)
