@@ -108,24 +108,22 @@ def interpella_groq(dati_testuali, oggi_str, giorni_str):
     Sei un meteorologo professionista. Il tuo compito è scrivere un bollettino discorsivo, fluido ed elegante per Rivoli (TO) a MEDIO TERMINE, partendo dalla sintesi oraria fornita.
     
     REGOLE FERREE (PENA IL FALLIMENTO):
-    1. TITOLO E IMPAGINAZIONE: Inizia ESATTAMENTE con: <b>Aggiornamento meteo a medio termine di {oggi_str}</b>. Lascia SEMPRE una riga vuota tra il titolo e il primo paragrafo, e una riga vuota tra i successivi paragrafi.
+    1. TITOLO E IMPAGINAZIONE: Inizia ESATTAMENTE con: <b>Aggiornamento meteo a medio termine di {oggi_str}</b>. Lascia una riga vuota tra il titolo e il primo paragrafo. NON inserire righe vuote tra un paragrafo e l'altro, vai semplicemente a capo.
     2. STRUTTURA: Scrivi tre paragrafi: il primo per {giorni_str[2]}, il secondo per {giorni_str[3]}, il terzo per {giorni_str[4]}.
     3. DIVIETO ASSOLUTO DI ELENCARE GLI ORARI: NON elencare MAI le temperature ora per ora.
     4. SINTESI DISCORSIVA: Sintetizza l'evoluzione usando fasi del giorno ("in mattinata", "nelle ore centrali", "nel pomeriggio", "in serata").
     5. TEMPERATURE DA CITARE: Cita solo la temperatura minima e la temperatura massima prevista.
-    6. DISAGIO TERMICO: Quando citi la temperatura massima, affianca ESATTAMENTE la dicitura sul disagio che trovi nei dati.
-    7. FLUIDITÀ E DIVIETO DI RIPETIZIONI (IMPORTANTE): Usa le diciture sulla nuvolosità fornite in modo NATURALE. È SEVERAMENTE VIETATO ripetere la parola "cielo" a distanza ravvicinata (es. NON scrivere "il cielo si presenterà come cielo sereno", scrivi "il cielo si manterrà sereno" o "avremo cielo sereno"). Il testo deve scorrere in modo logico, fluido e senza cacofonie.
+    6. DISAGIO TERMICO: Quando citi la temperatura massima, affianca ESATTAMENTE la dicitura sul disagio che trovi nei dati (comprese le emoji 🟢, 🟡, 🟠, 🔴, 🟣 o quelle invernali).
+    7. FLUIDITÀ E DIVIETO DI RIPETIZIONI (IMPORTANTE): Usa le diciture sulla nuvolosità fornite in modo NATURALE. È SEVERAMENTE VIETATO ripetere la parola "cielo" a distanza ravvicinata. Il testo deve scorrere in modo logico, fluido e senza cacofonie.
     8. PROBABILISMO SULLE PRECIPITAZIONI ESTIVE: In caso di instabilità, usa un tono probabilistico (es. "un aumento dell'instabilità con possibili rovesci (60%)").
     9. GESTIONE MALTEMPO INVERNALE/AUTUNNALE: Se nei dati trovi "Perturbazione in transito", NON usare la parola "instabilità". Descrivi le fasce orarie in cui piove/nevica aggregandole, indica la loro intensità (debole, moderata, forte) e indica SEMPRE l'orario del picco massimo in mm/h, citandolo nel testo.
     10. DIVIETO ASSOLUTO DI FORMATTAZIONE MARKDOWN: Telegram va in crash con caratteri spaiati. NON USARE MAI asterischi (*), underscore (_) o formattazioni simili in nessun punto del testo. Usa solo testo pulito e il tag HTML <b> per il titolo.
     
     ESEMPIO DI STILE INVERNALE DA IMITARE:
-    <b>Aggiornamento meteo a medio termine di {oggi_str}</b>
+    <b>Aggiornamento meteo a medio termine di domenica 12 dicembre</b>
 
-    La giornata di {giorni_str[2]} vedrà un progressivo peggioramento. Le temperature oscilleranno tra una minima di 4°C e una massima di 8°C (nessun disagio). Dal pomeriggio è atteso il transito di una perturbazione con piogge deboli, che si intensificheranno in serata divenendo moderate. Il picco massimo delle precipitazioni è atteso intorno alle 21:00 con circa 4.5 mm/h. La ventilazione si manterrà modesta umida orientale.
-    
+    La giornata di {giorni_str[2]} vedrà un progressivo peggioramento. Le temperature oscilleranno tra una minima di 4°C e una massima di 8°C (nessun disagio o freddo tollerabile 🟢). Dal pomeriggio è atteso il transito di una perturbazione con piogge deboli, che si intensificheranno in serata divenendo moderate. Il picco massimo delle precipitazioni è atteso intorno alle 21:00 con circa 4.5 mm/h. La ventilazione si manterrà modesta umida orientale.
     La giornata di {giorni_str[3]} sarà caratterizzata...
-    
     Infine, per {giorni_str[4]} assisteremo a...
     
     DATI GIORNALIERI DA TRASFORMARE IN TESTO:
@@ -395,20 +393,14 @@ def main():
                 crollo_dew = (dew_point_prev - dew_media) >= 5
                 aumento_ur = (ur_media - ur_prev) >= 5
                 
-                if aumento_spd < 5 and w_gst_media < 30:
-                    pass 
-                else:
-                    is_fohn = w_dir_str in ['NW', 'N', 'W'] and aumento_vento and crollo_dew
-                    is_oriente = w_dir_str in ['E', 'NE', 'SE'] and aumento_ur
-                    
-                    if is_fohn:
-                        vento_evento = f"ventilazione {int_vento} da probabile Föhn"
-                    elif is_oriente:
-                        vento_evento = f"ventilazione {int_vento} umida orientale"
-                    else:
-                        vento_evento = f"ventilazione {int_vento}"
+                if is_fohn and int_vento != "blanda":
+                    vento_evento = f"ventilazione {int_vento} da probabile Föhn"
+                elif is_oriente and int_vento != "blanda":
+                    vento_evento = f"ventilazione {int_vento} umida orientale"
+                elif int_vento != "blanda":
+                    vento_evento = f"ventilazione {int_vento}"
             else:
-                if w_gst_media >= 30 or w_spd_media >= 15:
+                if int_vento != "blanda":
                     vento_evento = f"ventilazione {int_vento}"
                             
         dew_point_prev = dew_media
