@@ -4,10 +4,7 @@ import sys
 import time
 import requests
 from datetime import datetime, timedelta
-
-# NUOVO SDK GEMINI
-from google import genai
-from google.genai import types
+from groq import Groq
 
 LAT = 45.07347491421504
 LON = 7.543461388723449
@@ -100,9 +97,12 @@ def percentuale_superamento(lista, soglia):
     if not valori_validi: return 0
     return (sum(1 for v in valori_validi if v >= soglia) / len(valori_validi)) * 100
 
-def interpella_gemini(dati_testuali, oggi_str, domani_str):
-    api_key = os.getenv("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key)
+def interpella_groq(dati_testuali, oggi_str, domani_str):
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return "Errore: GROQ_API_KEY non trovata."
+        
+    client = Groq(api_key=api_key)
     
     prompt = f"""
     Sei un meteorologo professionista. Il tuo compito è scrivere un bollettino discorsivo, fluido ed elegante per Rivoli (TO) partendo dalla sintesi oraria fornita.
@@ -137,14 +137,19 @@ def interpella_gemini(dati_testuali, oggi_str, domani_str):
     {dati_testuali}
     """
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.25)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.25,
         )
-        return response.text
+        return chat_completion.choices[0].message.content
     except Exception as e:
-        return f"Errore AI: {e}"
+        return f"Errore AI Groq: {e}"
 
 def main():
     mese_corrente = datetime.now().month
@@ -471,13 +476,12 @@ def main():
     {chr(10).join(sintesi_domani)}
     """
 
-    bollettino_finale = interpella_gemini(testo_per_ia, oggi_str, domani_str)
+    bollettino_finale = interpella_groq(testo_per_ia, oggi_str, domani_str)
     
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
     if token and chat_id:
-        # PARSE_MODE MODIFICATO IN HTML PER PREVENIRE CRASH DI FORMATTAZIONE
         risposta_tg = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", 
                       data={"chat_id": chat_id, "text": bollettino_finale, "parse_mode": "HTML"})
         if risposta_tg.status_code == 200:
