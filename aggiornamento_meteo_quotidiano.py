@@ -163,7 +163,7 @@ def main():
     try:
         dati_det = requests.get("https://api.open-meteo.com/v1/forecast", params={
             "latitude": LAT, "longitude": LON,
-            "hourly": "wind_direction_10m,cape,sunshine_duration,apparent_temperature,temperature_1000hPa,temperature_975hPa,temperature_950hPa,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa",
+            "hourly": "wind_direction_10m,cape,sunshine_duration,temperature_1000hPa,temperature_975hPa,temperature_950hPa,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa",
             "daily": "sunrise,sunset",
             "models": "icon_d2",
             "timezone": "Europe/Rome", "forecast_days": 2
@@ -171,7 +171,7 @@ def main():
 
         dati_eps_d2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", params={
             "latitude": LAT, "longitude": LON,
-            "hourly": "temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,dew_point_2m",
+            "hourly": "temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,dew_point_2m,apparent_temperature",
             "models": "icon_d2",
             "timezone": "Europe/Rome", "forecast_days": 2
         }, timeout=10).json()
@@ -418,8 +418,8 @@ def main():
         disagio_oggi = calcola_disagio_caldo(t_max_oggi, dew_max_oggi)
         disagio_domani = calcola_disagio_caldo(t_max_domani, dew_max_domani)
     elif inverno:
-        windchill_min_oggi = min(h_det.get('apparent_temperature', [])[0:24])
-        windchill_min_domani = min(h_det.get('apparent_temperature', [])[24:48])
+        windchill_min_oggi = min(h_eps_d2.get('apparent_temperature', [])[0:24])
+        windchill_min_domani = min(h_eps_d2.get('apparent_temperature', [])[24:48])
         disagio_oggi = calcola_disagio_freddo(windchill_min_oggi)
         disagio_domani = calcola_disagio_freddo(windchill_min_domani)
 
