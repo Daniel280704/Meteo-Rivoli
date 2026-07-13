@@ -2,7 +2,7 @@
 """
 Analizzatore Termodinamico e Cinematico Avanzato per Rischio Temporali
 Modello: ICON-D2 (Copertura 48h)
-- Trigger basato su singoli scenari: >= 1 spago D2 e >= 1 spago CH2 (Fallback: >= 2 spaghi D2) con precipitazioni >= 1mm
+- Trigger basato su singoli scenari: >= 4 spago D2 e >= 4 spago CH2 (Fallback: >= 6 spaghi D2) con precipitazioni >= 1mm
 - Estrazione setup condizionata alla finestra precipitativa
 - Calcolo del vettore di traslazione del sistema (Cloud Bearing Layer)
 - Analisi diagnostica tecnica tramite Groq AI (Llama 3.3 70B)
@@ -114,10 +114,9 @@ def get_finestre_innesco_ensemble():
                         
                     # Verifica condizione di innesco forte
                     if ch2_disponibile:
-                        if membri_d2 >= 1 and membri_ch2 >= 1:
-                            innesco_valido = True
+                        if membri_d2 >= 4 and membri_ch2 >= 4
                     else:
-                        if membri_d2 >= 2:
+                        if membri_d2 >= 6:
                             innesco_valido = True
 
             # Salviamo la finestra solo se la condizione di trigger è scattata in almeno una di queste ore
