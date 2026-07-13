@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import time
 import requests
 from datetime import datetime, timedelta
 
@@ -12,6 +13,19 @@ LON = 7.543461388723449
 GIORNI_IT = {0: "lunedì", 1: "martedì", 2: "mercoledì", 3: "giovedì", 4: "venerdì", 5: "sabato", 6: "domenica"}
 MESI_IT = {1: "gennaio", 2: "febbraio", 3: "marzo", 4: "aprile", 5: "maggio", 6: "giugno", 
            7: "luglio", 8: "agosto", 9: "settembre", 10: "ottobre", 11: "novembre", 12: "dicembre"}
+
+def scarica_dati_con_retry(url, params, max_retries=3):
+    for tentativo in range(max_retries):
+        try:
+            resp = requests.get(url, params=params, timeout=60)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Errore connessione Open-Meteo (Tentativo {tentativo + 1}/{max_retries}): {e}")
+            if tentativo < max_retries - 1:
+                time.sleep(10)
+            else:
+                raise e
 
 def formatta_data_it(dt):
     return f"{GIORNI_IT[dt.weekday()]} {dt.day} {MESI_IT[dt.month]}"
@@ -125,36 +139,36 @@ def main():
                 sys.exit(0)
     
     try:
-        dati_det = requests.get("https://api.open-meteo.com/v1/forecast", params={
+        dati_det = scarica_dati_con_retry("https://api.open-meteo.com/v1/forecast", params={
             "latitude": LAT, "longitude": LON,
             "hourly": "wind_direction_10m,cape,sunshine_duration,temperature_1000hPa,temperature_975hPa,temperature_950hPa,temperature_925hPa,temperature_900hPa,temperature_850hPa,temperature_800hPa",
             "daily": "sunrise,sunset",
             "models": "icon_d2",
             "timezone": "Europe/Rome", "forecast_days": 2
-        }, timeout=10).json()
+        })
 
-        dati_eps_d2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", params={
+        dati_eps_d2 = scarica_dati_con_retry("https://ensemble-api.open-meteo.com/v1/ensemble", params={
             "latitude": LAT, "longitude": LON,
             "hourly": "temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,dew_point_2m,apparent_temperature",
             "models": "icon_d2",
             "timezone": "Europe/Rome", "forecast_days": 2
-        }, timeout=10).json()
+        })
         
         ch2_disponibile = True
         try:
-            dati_eps_ch2 = requests.get("https://ensemble-api.open-meteo.com/v1/ensemble", params={
+            dati_eps_ch2 = scarica_dati_con_retry("https://ensemble-api.open-meteo.com/v1/ensemble", params={
                 "latitude": LAT, "longitude": LON,
                 "hourly": "precipitation",
                 "models": "meteoswiss_icon_ch2_ensemble",
                 "timezone": "Europe/Rome", "forecast_days": 2
-            }, timeout=10).json()
+            })
             
-            dati_det_ch2 = requests.get("https://api.open-meteo.com/v1/forecast", params={
+            dati_det_ch2 = scarica_dati_con_retry("https://api.open-meteo.com/v1/forecast", params={
                 "latitude": LAT, "longitude": LON,
                 "hourly": "sunshine_duration",
                 "models": "meteoswiss_icon_ch2",
                 "timezone": "Europe/Rome", "forecast_days": 2
-            }, timeout=10).json()
+            })
             
             if 'hourly' not in dati_eps_ch2 or 'hourly' not in dati_det_ch2:
                 ch2_disponibile = False
@@ -162,7 +176,7 @@ def main():
             ch2_disponibile = False
             
     except Exception as e:
-        print(f"Errore fatale nel recupero dati Open-Meteo: {e}")
+        print(f"❌ Errore fatale nel recupero dati Open-Meteo: {e}")
         return
 
     h_det = dati_det.get('hourly', {})
