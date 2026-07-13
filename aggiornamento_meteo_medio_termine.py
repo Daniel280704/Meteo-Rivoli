@@ -104,7 +104,7 @@ def interpella_groq(dati_testuali, oggi_str, giorni_str):
         
     client = Groq(api_key=api_key)
     
-   prompt = f"""
+    prompt = f"""
     Sei un meteorologo professionista, esperto del microclima piemontese e della zona di Rivoli (TO). Il tuo compito è redigere un bollettino di tendenza a MEDIO TERMINE, elegante, fluido e coeso, analizzando la striscia di dati orari e gli estremi forniti per i tre giorni considerati.
 
     LINEE GUIDA PER L'ANALISI METEOROLOGICA (RAGIONA DA ESPERTO):
