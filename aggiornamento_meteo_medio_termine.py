@@ -335,17 +335,11 @@ def main():
         if estate:
             if num_1mm >= 3:
                 instabilita = "un aumento dell'instabilità"
-                if pct_5mm >= 75: probabilita = 95
-                elif pct_5mm >= 50: probabilita = 80
-                elif pct_5mm >= 25: probabilita = 70
-                elif pct_3mm >= 50: probabilita = 60
-                elif pct_3mm >= 25: probabilita = 50
-                elif pct_1mm >= 50: probabilita = 40
-                elif pct_1mm >= 25: probabilita = 30
-                else: probabilita = 15
+                probabilita = int(round(pct_1mm))
         elif inverno:
             if pct_1mm >= 75:
                 perturbazione = True
+                probabilita = int(round(pct_1mm))
 
         tipo_prec = ""
         int_prec = ""
@@ -437,6 +431,28 @@ def main():
         if abs(dew_media - t_media) <= 1 and ur_media >= 95 and w_spd_media < 10:
             nebbia = "possibile formazione di nebbia"
 
+        gelata = ""
+        if ora_solare >= 22 or ora_solare <= 8:
+            # 1. FORTI GELATE (T <= -4°C)
+            if t_media <= -4:
+                if ur_media >= 50:
+                    gelata = "pericolo di forti gelate diffuse"          
+            # 2. GELATE MODESTE (-4°C < T <= -1°C)
+            elif -4 < t_media <= -1:
+                if ur_media >= 60:
+                    gelata = "rischio di gelate diffuse"
+                elif 45 <= ur_media < 60:
+                    gelata = "rischio di lievi gelate"
+            # 3. DEBOLI GELATE O BRINATE (-1°C < T <= 1°C)
+            elif -1 < t_media <= 1:
+                if t_media <= 0:
+                    if ur_media >= 55:
+                        gelata = "rischio di lievi gelate"
+                else: 
+                    # T tra 0°C e 1°C: gela solo se c'è molta umidità che favorisce il congelamento al suolo
+                    if ur_media >= 75:
+                        gelata = "possibili lievi brinate"
+
         t_min[giorno_idx] = min(t_min[giorno_idx], t_media)
         t_max[giorno_idx] = max(t_max[giorno_idx], t_media)
         if estate: 
@@ -453,10 +469,11 @@ def main():
             else:
                 record += f" Si segnala {instabilita} con rischio di {tipo_prec} ({probabilita}%)."
         elif inverno and perturbazione:
-            record += f" Perturbazione in transito con {tipo_prec} {int_prec} (media {prec_media_eps} mm/h)."
+            record += f" Perturbazione in transito con {tipo_prec} {int_prec} (media {prec_media_eps} mm/h, probabilità {probabilita}%)."
                 
         if vento_evento: record += f" {vento_evento}."
         if nebbia: record += f" {nebbia}."
+        if gelata: record += f" {gelata}."
         
         sintesi[giorno_idx].append(record)
 
