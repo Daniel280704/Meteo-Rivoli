@@ -2,8 +2,8 @@ name: Bollettino idrico orto
 
 on:
   schedule:
-    # 19:13 ora locale estiva = 17:13 UTC
-    - cron: '13 17 * * *'
+    # Esegue al minuto 18 di ogni ora, dalle 12:00 alle 16:00 UTC (14:18 - 18:18 ora estiva italiana)
+    - cron: '18 12-16 * * *'
   workflow_dispatch: 
 
 jobs:
@@ -20,10 +20,11 @@ jobs:
           python-version: '3.10'
 
       - name: Installa dipendenze
-        run: pip install requests
+        run: pip install requests groq
 
       - name: Esegui Script Orto
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python stress_idrico_orto.py
