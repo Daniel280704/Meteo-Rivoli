@@ -324,12 +324,26 @@ def main():
                     probabilita = int(round(pct_d2_1mm))
         elif inverno:
             if ch2_disponibile:
-                pct_ch2_1mm = percentuale_superamento(prec_eps_ch2_membri, 1.0)
-                if pct_d2_1mm >= 50 and pct_ch2_1mm >= 50:
+                # Creiamo una finestra di tolleranza per CH2 (da 2 ore prima a 2 ore dopo)
+                inizio_finestra = max(0, i - 2)
+                fine_finestra = min(len(orari), i + 3) # +3 perché in Python l'ultimo è escluso
+                max_pct_ch2_intorno = 0
+                for j in range(inizio_finestra, fine_finestra):
+                    spaghi_ch2_j = [h_eps_ch2[k][j] for k in h_eps_ch2 if k.startswith('precipitation_member')]
+                    pct_ch2_j = percentuale_superamento(spaghi_ch2_j, 1.0)
+                    if pct_ch2_j > max_pct_ch2_intorno:
+                        max_pct_ch2_intorno = pct_ch2_j
+                # Il trigger scatta se D2 vede la perturbazione in quest'ora (>= 50%) 
+                # e CH2 la vede nelle vicinanze temporali (>= 50%)
+                if pct_d2_1mm >= 50 and max_pct_ch2_intorno >= 50:
                     perturbazione = True
+                    # Calcoliamo la probabilità media tra il dato attuale di D2 e il picco trovato di CH2
+                    probabilita = int(round((pct_d2_1mm + max_pct_ch2_intorno) / 2))
             else:
                 if pct_d2_1mm >= 75:
                     perturbazione = True
+                    # Probabilità basata solo su ICON-D2
+                    probabilita = int(round(pct_d2_1mm))
 
         tipo_prec = ""
         int_prec = ""
@@ -456,7 +470,7 @@ def main():
             else:
                 record += f" Si segnala {instabilita} con rischio di {tipo_prec} ({probabilita}%)."
         elif inverno and perturbazione:
-            record += f" Perturbazione in transito con {tipo_prec} {int_prec} (media {prec_media_d2} mm/h)."
+            record += f" Perturbazione in transito con {tipo_prec} {int_prec} (media {prec_media_d2} mm/h, probabilità {probabilita}%)."
                 
         if vento_evento: record += f" {vento_evento}."
         if nebbia: record += f" {nebbia}."
