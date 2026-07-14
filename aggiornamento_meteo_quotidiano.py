@@ -296,33 +296,32 @@ def main():
         perturbazione = False
         probabilita = 0
 
-        if estate:
+       if estate:
             if ch2_disponibile:
+                # Creiamo una finestra di tolleranza per CH2 (da 4 ore prima a 4 ore dopo)
+                inizio_finestra = max(0, i - 4)
+                fine_finestra = min(len(orari), i + 5) # +5 perché in Python l'ultimo è escluso
+                
+                max_num_ch2_intorno = 0
+                for j in range(inizio_finestra, fine_finestra):
+                    spaghi_ch2_j = [h_eps_ch2[k][j] for k in h_eps_ch2 if k.startswith('precipitation_member')]
+                    num_ch2_j = conta_superamenti(spaghi_ch2_j, 1.0)
+                    if num_ch2_j > max_num_ch2_intorno:
+                        max_num_ch2_intorno = num_ch2_j
+                
+                # Calcoliamo la percentuale esatta sull'ora specifica per fare la media
                 pct_ch2_1mm = percentuale_superamento(prec_eps_ch2_membri, 1.0)
-                pct_ch2_3mm = percentuale_superamento(prec_eps_ch2_membri, 3.0)
-                pct_ch2_5mm = percentuale_superamento(prec_eps_ch2_membri, 5.0)
-                num_ch2_1mm = conta_superamenti(prec_eps_ch2_membri, 1.0)
-                if num_d2_1mm >= 2 and num_ch2_1mm >= 2:
+                
+                # Il trigger scatta se D2 vede pioggia in questa ora, e CH2 la vede nelle vicinanze (±4h)
+                if num_d2_1mm >= 2 and max_num_ch2_intorno >= 2:
                     instabilita = "un aumento dell'instabilità"
-                    if pct_d2_5mm >= 75 and pct_ch2_5mm >= 75: probabilita = 95
-                    elif pct_d2_5mm >= 50 and pct_ch2_5mm >= 50: probabilita = 80
-                    elif pct_d2_5mm >= 25 and pct_ch2_5mm >= 25: probabilita = 70
-                    elif pct_d2_3mm >= 50 and pct_ch2_3mm >= 50: probabilita = 60
-                    elif pct_d2_3mm >= 25 and pct_ch2_3mm >= 25: probabilita = 50
-                    elif pct_d2_1mm >= 50 and pct_ch2_1mm >= 50: probabilita = 40
-                    elif pct_d2_1mm >= 25 and pct_ch2_1mm >= 25: probabilita = 30
-                    else: probabilita = 15
+                    # Media aritmetica della vera probabilità tra ICON-D2 e ICON-CH2
+                    probabilita = int(round((pct_d2_1mm + pct_ch2_1mm) / 2))
             else:
                 if num_d2_1mm >= 3:
                     instabilita = "un aumento dell'instabilità"
-                    if pct_d2_5mm >= 75: probabilita = 95
-                    elif pct_d2_5mm >= 50: probabilita = 80
-                    elif pct_d2_5mm >= 25: probabilita = 70
-                    elif pct_d2_3mm >= 50: probabilita = 60
-                    elif pct_d2_3mm >= 25: probabilita = 50
-                    elif pct_d2_1mm >= 50: probabilita = 40
-                    elif pct_d2_1mm >= 25: probabilita = 30
-                    else: probabilita = 15
+                    # Vera probabilità matematica di ICON-D2
+                    probabilita = int(round(pct_d2_1mm))
         elif inverno:
             if ch2_disponibile:
                 pct_ch2_1mm = percentuale_superamento(prec_eps_ch2_membri, 1.0)
@@ -419,6 +418,28 @@ def main():
         if abs(dew_media - t_media) <= 1 and ur_media >= 95 and w_spd_media < 10:
             nebbia = "possibile formazione di nebbia"
 
+        gelata = ""
+        if ora_solare >= 22 or ora_solare <= 8:
+            # 1. FORTI GELATE (T <= -4°C)
+            if t_media <= -4:
+                if ur_media >= 50:
+                    gelata = "pericolo di forti gelate diffuse"          
+            # 2. GELATE MODESTE (-4°C < T <= -1°C)
+            elif -4 < t_media <= -1:
+                if ur_media >= 60:
+                    gelata = "rischio di gelate diffuse"
+                elif 45 <= ur_media < 60:
+                    gelata = "rischio di lievi gelate"
+            # 3. DEBOLI GELATE O BRINATE (-1°C < T <= 1°C)
+            elif -1 < t_media <= 1:
+                if t_media <= 0:
+                    if ur_media >= 55:
+                        gelata = "rischio di lievi gelate"
+                else: 
+                    # T tra 0°C e 1°C: gela solo se c'è molta umidità che favorisce il congelamento al suolo
+                    if ur_media >= 75:
+                        gelata = "possibili lievi brinate"
+
         if giorno_idx == 0:
             t_min_oggi = min(t_min_oggi, t_media)
             t_max_oggi = max(t_max_oggi, t_media)
@@ -439,6 +460,7 @@ def main():
                 
         if vento_evento: record += f" {vento_evento}."
         if nebbia: record += f" {nebbia}."
+        if gelata: record += f" {gelata}."
         
         if giorno_idx == 0: sintesi_oggi.append(record)
         else: sintesi_domani.append(record)
