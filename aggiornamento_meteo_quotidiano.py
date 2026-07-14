@@ -307,52 +307,75 @@ def main():
 
         if estate:
             if ch2_disponibile:
-                # Creiamo una finestra di tolleranza per CH2 (da 4 ore prima a 4 ore dopo)
                 inizio_finestra = max(0, i - 4)
-                fine_finestra = min(len(orari), i + 5) # +5 perché in Python l'ultimo è escluso
+                fine_finestra = min(len(orari), i + 5)
                 
                 max_num_ch2_intorno = 0
+                max_pct_ch2_intorno = 0
+                max_pct_d2_intorno = 0
+                
                 for j in range(inizio_finestra, fine_finestra):
+                    # Ricerca picco probabilità per CH2
                     spaghi_ch2_j = [h_eps_ch2[k][j] for k in h_eps_ch2 if k.startswith('precipitation_member')]
                     num_ch2_j = conta_superamenti(spaghi_ch2_j, 1.0)
-                    if num_ch2_j > max_num_ch2_intorno:
-                        max_num_ch2_intorno = num_ch2_j
+                    pct_ch2_j = percentuale_superamento(spaghi_ch2_j, 1.0)
+                    if num_ch2_j > max_num_ch2_intorno: max_num_ch2_intorno = num_ch2_j
+                    if pct_ch2_j > max_pct_ch2_intorno: max_pct_ch2_intorno = pct_ch2_j
+                    
+                    # Ricerca picco probabilità per D2
+                    spaghi_d2_j = [h_eps_d2[k][j] for k in h_eps_d2 if k.startswith('precipitation_member')]
+                    pct_d2_j = percentuale_superamento(spaghi_d2_j, 1.0)
+                    if pct_d2_j > max_pct_d2_intorno: max_pct_d2_intorno = pct_d2_j
                 
-                # Calcoliamo la percentuale esatta sull'ora specifica per fare la media
-                pct_ch2_1mm = percentuale_superamento(prec_eps_ch2_membri, 1.0)
-                
-                # Il trigger scatta se D2 vede pioggia in questa ora, e CH2 la vede nelle vicinanze (±4h)
+                # Innesco all'ora esatta, ma stampa la media dei picchi massimi previsti!
                 if num_d2_1mm >= 2 and max_num_ch2_intorno >= 2:
                     instabilita = "un aumento dell'instabilità"
-                    # Media aritmetica della vera probabilità tra ICON-D2 e ICON-CH2
-                    probabilita = int(round((pct_d2_1mm + pct_ch2_1mm) / 2))
+                    probabilita = int(round((max_pct_d2_intorno + max_pct_ch2_intorno) / 2))
             else:
                 if num_d2_1mm >= 3:
                     instabilita = "un aumento dell'instabilità"
-                    # Vera probabilità matematica di ICON-D2
-                    probabilita = int(round(pct_d2_1mm))
+                    # Ricerca picco D2 per fallback
+                    inizio_finestra = max(0, i - 4)
+                    fine_finestra = min(len(orari), i + 5)
+                    max_pct_d2_intorno = 0
+                    for j in range(inizio_finestra, fine_finestra):
+                        spaghi_d2_j = [h_eps_d2[k][j] for k in h_eps_d2 if k.startswith('precipitation_member')]
+                        pct_d2_j = percentuale_superamento(spaghi_d2_j, 1.0)
+                        if pct_d2_j > max_pct_d2_intorno: max_pct_d2_intorno = pct_d2_j
+                    
+                    probabilita = int(round(max_pct_d2_intorno))
+                    
         elif inverno:
             if ch2_disponibile:
-                # Creiamo una finestra di tolleranza per CH2 (da 2 ore prima a 2 ore dopo)
                 inizio_finestra = max(0, i - 2)
-                fine_finestra = min(len(orari), i + 3) # +3 perché in Python l'ultimo è escluso
+                fine_finestra = min(len(orari), i + 3)
                 max_pct_ch2_intorno = 0
+                max_pct_d2_intorno = 0
+                
                 for j in range(inizio_finestra, fine_finestra):
                     spaghi_ch2_j = [h_eps_ch2[k][j] for k in h_eps_ch2 if k.startswith('precipitation_member')]
                     pct_ch2_j = percentuale_superamento(spaghi_ch2_j, 1.0)
-                    if pct_ch2_j > max_pct_ch2_intorno:
-                        max_pct_ch2_intorno = pct_ch2_j
-                # Il trigger scatta se D2 vede la perturbazione in quest'ora (>= 50%) 
-                # e CH2 la vede nelle vicinanze temporali (>= 50%)
+                    if pct_ch2_j > max_pct_ch2_intorno: max_pct_ch2_intorno = pct_ch2_j
+                    
+                    spaghi_d2_j = [h_eps_d2[k][j] for k in h_eps_d2 if k.startswith('precipitation_member')]
+                    pct_d2_j = percentuale_superamento(spaghi_d2_j, 1.0)
+                    if pct_d2_j > max_pct_d2_intorno: max_pct_d2_intorno = pct_d2_j
+                    
                 if pct_d2_1mm >= 50 and max_pct_ch2_intorno >= 50:
                     perturbazione = True
-                    # Calcoliamo la probabilità media tra il dato attuale di D2 e il picco trovato di CH2
-                    probabilita = int(round((pct_d2_1mm + max_pct_ch2_intorno) / 2))
+                    probabilita = int(round((max_pct_d2_intorno + max_pct_ch2_intorno) / 2))
             else:
                 if pct_d2_1mm >= 75:
                     perturbazione = True
-                    # Probabilità basata solo su ICON-D2
-                    probabilita = int(round(pct_d2_1mm))
+                    inizio_finestra = max(0, i - 2)
+                    fine_finestra = min(len(orari), i + 3)
+                    max_pct_d2_intorno = 0
+                    for j in range(inizio_finestra, fine_finestra):
+                        spaghi_d2_j = [h_eps_d2[k][j] for k in h_eps_d2 if k.startswith('precipitation_member')]
+                        pct_d2_j = percentuale_superamento(spaghi_d2_j, 1.0)
+                        if pct_d2_j > max_pct_d2_intorno: max_pct_d2_intorno = pct_d2_j
+                    
+                    probabilita = int(round(max_pct_d2_intorno))
 
         tipo_prec = ""
         int_prec = ""
