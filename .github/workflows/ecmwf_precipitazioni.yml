@@ -1,0 +1,45 @@
+name: Invio Grafico Precipitazioni ECMWF
+
+on:
+  schedule:
+    # Esegue ogni 2 ore (ai minuti 25). 
+    # Sfalsato rispetto allo script termico per evitare conflitti di push su GitHub.
+    # Il controllo MD5 bloccherà l'invio se i dati ECMWF non si sono aggiornati.
+    - cron: '25 */2 * * *'
+  
+  workflow_dispatch: # Permette l'avvio manuale dal pannello Actions
+
+jobs:
+  genera_e_invia_precipitazioni:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # FONDAMENTALE: Consente di committare il file hash .txt
+
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests numpy pandas matplotlib
+
+      - name: Esegui Script Grafico Precipitazioni
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python plot_ecmwf_precip_telegram.py
+
+      - name: Salva il file hash dei dati precipitativi (Commit & Push)
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # Attenzione: qui aggiungiamo il file di hash specifico per questo script
+          git add ultimo_hash_ecmwf_precip.txt || true
+          git commit -m "Aggiornamento hash precipitazioni ECMWF [skip ci]" || echo "Nessun nuovo run ECMWF, hash invariato"
+          git push
