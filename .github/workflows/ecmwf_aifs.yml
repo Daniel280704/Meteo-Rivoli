@@ -1,4 +1,4 @@
-name: Invio Grafico Profilo ECMWF
+name: Invio Grafico Profilo ECMWF AIFS
 
 on:
   schedule:
@@ -32,7 +32,7 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python ecmwf.py
+        run: python ecmwf_aifs.py
 
       - name: Salva il file hash dei dati ECMWF (Commit & Push)
         run: |
