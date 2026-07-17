@@ -43,29 +43,31 @@ def main():
     
     URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
     
-    var_list = [
+    # Variabili orarie
+    hourly_vars = [
         "temperature_850hPa",
         "temperature_500hPa",
         "geopotential_height_850hPa",
-        "geopotential_height_500hPa",
-        "precipitation"
+        "geopotential_height_500hPa"
     ]
 
     params = {
         "latitude": LATITUDE,
         "longitude": LONGITUDE,
-        "hourly": ",".join(var_list),
+        "hourly": ",".join(hourly_vars),
+        "daily": "precipitation_sum", # Inserita la precipitazione giornaliera
         "models": "ecmwf_ifs025_ensemble",
         "timezone": "Europe/Rome",
         "forecast_days": 14
     }
-    headers = {"User-Agent": "MeteoBot-Spaghetti/3.1"}
+    headers = {"User-Agent": "MeteoBot-Spaghetti/4.0"}
 
     try:
         response = requests.get(URL, params=params, headers=headers)
         response.raise_for_status()
         data = response.json()
         hourly = data.get("hourly", {})
+        daily = data.get("daily", {})
     except Exception as e:
         print(f"❌ Errore API: {e}", file=sys.stderr)
         sys.exit(1)
@@ -75,9 +77,12 @@ def main():
         sys.exit(0)
         
     print("ℹ️ Trovati nuovi dati per ECMWF Ensemble. Generazione del grafico in corso...")
-    times = pd.to_datetime(hourly.get("time"))
+    
+    # Assi temporali separati: Orario per termiche/geopotenziale, Giornaliero per pioggia (centrato a metà giornata)
+    hourly_times = pd.to_datetime(hourly.get("time"))
+    daily_times = pd.to_datetime(daily.get("time")) + pd.Timedelta(hours=12)
 
-    def extract_members(var_name):
+    def extract_hourly_members(var_name):
         member_keys = [k for k in hourly.keys() if k.startswith(f"{var_name}_member")]
         if not member_keys:
             return None
@@ -85,12 +90,20 @@ def main():
         members_data = [hourly[k] for k in member_keys]
         return np.array(members_data, dtype=float)
 
-    # Estrazione matrici (51 membri per ogni variabile)
-    t850_members = extract_members("temperature_850hPa")
-    z850_members = extract_members("geopotential_height_850hPa")
-    t500_members = extract_members("temperature_500hPa")
-    z500_members = extract_members("geopotential_height_500hPa")
-    precip_members = extract_members("precipitation")
+    def extract_daily_members(var_name):
+        member_keys = [k for k in daily.keys() if k.startswith(f"{var_name}_member")]
+        if not member_keys:
+            return None
+        member_keys.sort()
+        members_data = [daily[k] for k in member_keys]
+        return np.array(members_data, dtype=float)
+
+    # Estrazione matrici (51 membri)
+    t850_members = extract_hourly_members("temperature_850hPa")
+    z850_members = extract_hourly_members("geopotential_height_850hPa")
+    t500_members = extract_hourly_members("temperature_500hPa")
+    z500_members = extract_hourly_members("geopotential_height_500hPa")
+    precip_members = extract_daily_members("precipitation_sum")
 
     # Creazione dei 3 Subplot
     fig, axs = plt.subplots(3, 1, figsize=(14, 18), sharex=True)
@@ -100,15 +113,11 @@ def main():
         if t_mat is not None:
             t_min, t_max = np.nanmin(t_mat), np.nanmax(t_mat)
             r_t = t_max - t_min if (t_max - t_min) > 0 else 5.0
-            # Il limite superiore prende il massimo + 5% di margine
-            # Il limite inferiore scende molto sotto i dati reali per confinarli in alto
             ax_t.set_ylim((t_max + 0.05 * r_t) - (r_t / 0.45), t_max + 0.05 * r_t)
 
         if z_mat is not None:
             z_min, z_max = np.nanmin(z_mat), np.nanmax(z_mat)
             r_z = z_max - z_min if (z_max - z_min) > 0 else 50.0
-            # Il limite inferiore prende il minimo - 5% di margine
-            # Il limite superiore sale molto sopra i dati reali per confinarli in basso
             ax_z.set_ylim(z_min - 0.05 * r_z, (z_min - 0.05 * r_z) + (r_z / 0.45))
 
     # ====================================================
@@ -120,15 +129,15 @@ def main():
 
     if t850_members is not None:
         for i in range(t850_members.shape[0]):
-            ax1.plot(times, t850_members[i], color=color_850, alpha=0.15, linewidth=0.8, linestyle='-')
+            ax1.plot(hourly_times, t850_members[i], color=color_850, alpha=0.15, linewidth=0.8, linestyle='-')
         t850_mean = np.nanmean(t850_members, axis=0)
-        ax1.plot(times, t850_mean, color=color_850, linewidth=2.8, linestyle='-', label='Media Temp 850 hPa (°C)')
+        ax1.plot(hourly_times, t850_mean, color=color_850, linewidth=2.8, linestyle='-', label='Media Temp 850 hPa (°C)')
 
     if z850_members is not None:
         for i in range(z850_members.shape[0]):
-            ax1_z.plot(times, z850_members[i], color=color_850, alpha=0.12, linewidth=0.8, linestyle='--')
+            ax1_z.plot(hourly_times, z850_members[i], color=color_850, alpha=0.12, linewidth=0.8, linestyle='--')
         z850_mean = np.nanmean(z850_members, axis=0)
-        ax1_z.plot(times, z850_mean, color=color_850, linewidth=2.8, linestyle='--', label='Media Geop 850 hPa (m)')
+        ax1_z.plot(hourly_times, z850_mean, color=color_850, linewidth=2.8, linestyle='--', label='Media Geop 850 hPa (m)')
 
     applica_spaziatura_asimmetrica(ax1, ax1_z, t850_members, z850_members)
 
@@ -153,15 +162,15 @@ def main():
 
     if t500_members is not None:
         for i in range(t500_members.shape[0]):
-            ax2.plot(times, t500_members[i], color=color_500, alpha=0.15, linewidth=0.8, linestyle='-')
+            ax2.plot(hourly_times, t500_members[i], color=color_500, alpha=0.15, linewidth=0.8, linestyle='-')
         t500_mean = np.nanmean(t500_members, axis=0)
-        ax2.plot(times, t500_mean, color=color_500, linewidth=2.8, linestyle='-', label='Media Temp 500 hPa (°C)')
+        ax2.plot(hourly_times, t500_mean, color=color_500, linewidth=2.8, linestyle='-', label='Media Temp 500 hPa (°C)')
 
     if z500_members is not None:
         for i in range(z500_members.shape[0]):
-            ax2_z.plot(times, z500_members[i], color=color_500, alpha=0.12, linewidth=0.8, linestyle='--')
+            ax2_z.plot(hourly_times, z500_members[i], color=color_500, alpha=0.12, linewidth=0.8, linestyle='--')
         z500_mean = np.nanmean(z500_members, axis=0)
-        ax2_z.plot(times, z500_mean, color=color_500, linewidth=2.8, linestyle='--', label='Media Geop 500 hPa (m)')
+        ax2_z.plot(hourly_times, z500_mean, color=color_500, linewidth=2.8, linestyle='--', label='Media Geop 500 hPa (m)')
 
     applica_spaziatura_asimmetrica(ax2, ax2_z, t500_members, z500_members)
 
@@ -178,23 +187,33 @@ def main():
     ax2.set_title("Profilo 500 hPa - Tutti i membri Ensemble ECMWF", fontsize=13, fontweight='bold')
 
     # ====================================================
-    # 3. SUBPLOT PRECIPITAZIONI
+    # 3. SUBPLOT PRECIPITAZIONI GIORNALIERE
     # ====================================================
     ax3 = axs[2]
-    color_precip = "#2ca02c" 
+    color_precip = "#158c3a" 
 
     if precip_members is not None:
+        # 1. Nuvola di punti per i singoli membri (Scatter plot)
+        # Sovrapponiamo i 51 punti per ogni giorno per mostrare la dispersione
         for i in range(precip_members.shape[0]):
-            ax3.plot(times, precip_members[i], color=color_precip, alpha=0.2, linewidth=0.8, linestyle='-')
+            ax3.plot(daily_times, precip_members[i], marker='o', color=color_precip, alpha=0.2, markersize=4, linestyle='None')
+        
+        # 2. Barra per la Media Ensemble
         precip_mean = np.nanmean(precip_members, axis=0)
-        ax3.plot(times, precip_mean, color="#0a5c0a", linewidth=2.5, linestyle='-', label='Media Precipitazioni Orarie (mm/h)')
+        ax3.bar(daily_times, precip_mean, color=color_precip, alpha=0.5, width=0.7, edgecolor=color_precip, linewidth=1, label='Media Precipitazioni (mm/24h)')
+        
+        # Plot fittizio per aggiungere la nuvola di punti alla legenda
+        ax3.plot([], [], marker='o', color=color_precip, alpha=0.5, linestyle='None', label='Scenari singoli (51 membri)')
 
-    ax3.set_ylabel("Precipitazioni (mm/h)", fontsize=11, color=color_precip, fontweight='bold')
+    ax3.set_ylabel("Precipitazioni Totali (mm/24h)", fontsize=11, color=color_precip, fontweight='bold')
     ax3.tick_params(axis='y', labelcolor=color_precip)
-    ax3.set_ylim(bottom=0)
+    
+    # Calcolo limite massimo asse Y per le precipitazioni
+    p_max = np.nanmax(precip_members) if not np.isnan(precip_members).all() else 0
+    ax3.set_ylim(bottom=0, top=max(p_max * 1.2, 5.0))
     ax3.grid(True, linestyle='--', alpha=0.5)
     ax3.legend(loc='upper left', fontsize=10)
-    ax3.set_title("Precipitazioni Orarie - Tutti i membri Ensemble ECMWF", fontsize=13, fontweight='bold')
+    ax3.set_title("Precipitazioni Giornaliere - Accumulo Totale 24h", fontsize=13, fontweight='bold')
 
     # Formattazione Asse X
     titolo_in_basso = "Meteogramma Spaghetti ECMWF Ensemble IFS 0.25° (14 Giorni)   |   Data e Ora (Fuso Orario Locale)"
@@ -221,9 +240,8 @@ def main():
 
         caption = (
             "🍝 <b>Meteogramma Spaghetti ECMWF IFS (14 Giorni)</b>\n"
-            "• <b>850 hPa & 500 hPa:</b> Temp (alto, continua) e Geopotenziale (basso, tratteggiata).\n"
-            "• <b>Tratti sottili:</b> tutti i singoli scenari dell'Ensemble.\n"
-            "• <b>Linea spessa:</b> Media dell'Ensemble (ENS Mean).\n\n"
+            "• <b>850 & 500 hPa:</b> Temp (alto, continua) e Geopotenziale (basso, tratteggiata).\n"
+            "• <b>Precipitazioni:</b> Accumulo giornaliero. Le barre indicano la media, i puntini mostrano la dispersione dei 51 scenari.\n\n"
             f"<i>Aggiornato il {ora_esecuzione}</i>"
         )
 
