@@ -8,8 +8,8 @@ from collections import Counter
 from datetime import datetime, timedelta
 from groq import Groq
 
-LAT = 45.0736
-LON = 7.5434
+LAT = 45.07347491421504
+LON = 7.543461388723449
 
 GIORNI_IT = {0: "lunedì", 1: "martedì", 2: "mercoledì", 3: "giovedì", 4: "venerdì", 5: "sabato", 6: "domenica"}
 MESI_IT = {1: "gennaio", 2: "febbraio", 3: "marzo", 4: "aprile", 5: "maggio", 6: "giugno", 
@@ -156,8 +156,8 @@ def interpella_groq(dati_testuali, oggi_str, domani_str):
     
     REGOLE FERREE (PENA IL FALLIMENTO):
     1. TITOLO: Inizia ESATTAMENTE con: <b>Aggiornamento meteo di {oggi_str}</b>. Lascia TASSATIVAMENTE una sola riga vuota (usa un doppio 'a capo') tra il titolo e il primo paragrafo.
-    2. STRUTTURA: Due paragrafi totali, uno per Oggi e uno per Domani. Lascia ESATTAMENTE una sola riga vuota tra i paragrafi.
-    3. STILE TEMPERATURE E DISAGIO CALDO: Per esprimere le temperature devi usare TASSATIVAMENTE questa identica struttura al singolare: "la temperatura minima sarà di X °C, mentre la massima raggiungerà i Y °C". Scrivi i valori termici SEMPRE staccando l'unità di misura (es. "20 °C" e NON "20°C"). DEVI INCLUDERE l'emoji del disagio termico copiandola dai dati (es. "con un disagio marcato 🟠"). Se c'è l'avviso "(possibili gelate)", copialo testualmente dopo la minima.
+    2. STRUTTURA E INCIPIT: Due paragrafi in totale, uno per Oggi e uno per Domani. Lascia ESATTAMENTE una sola riga vuota tra i paragrafi. INIZIA SEMPRE ogni paragrafo citando il giorno contestualizzato e la data (es. "Oggi, {oggi_str}, " oppure "Domani, {domani_str}, ").
+    3. STILE TEMPERATURE E DISAGIO CALDO: Subito dopo la data, per esprimere le temperature usa TASSATIVAMENTE questa struttura al singolare: "la temperatura minima sarà di X °C, mentre la massima raggiungerà i Y °C". Scrivi i valori termici SEMPRE staccando l'unità di misura (es. "20 °C" e NON "20°C"). DEVI INCLUDERE l'emoji del disagio termico copiandola dai dati (es. "con un disagio marcato 🟠"). Se c'è l'avviso "(possibili gelate)", copialo testualmente dopo la minima.
     4. CIELO E NEBBIA: Non usare MAI l'avverbio "prevalentemente", usa sempre "in prevalenza". Se nei dati è indicata la nebbia, integrala in maniera fluida con la descrizione della nuvolosità (es. "Al mattino saranno possibili banchi di nebbia, che lasceranno spazio a un cielo in prevalenza poco nuvoloso...").
     5. STILE VENTO E DISAGIO FREDDO: Se nei dati leggi "La ventilazione sarà blanda" o "La ventilazione sarà da blanda a moderata", scrivi ESATTAMENTE questo. Se è forte, aggancia fluidamente l'emoji e il disagio da freddo al vento se indicato.
     6. DIVIETO COMMENTI SOGGETTIVI: NON usare MAI espressioni romanzate come "condizioni ideali" o "giornata scomoda". Mantieni un tono tecnico e fattuale. NESSUN asterisco o markdown.
