@@ -112,10 +112,11 @@ def interpella_groq(dati_testuali, oggi_str, domani_str):
     1. TITOLO: Inizia ESATTAMENTE con: <b>Aggiornamento meteo di {oggi_str}</b>. Lascia una riga vuota tra il titolo e il testo.
     2. STRUTTURA: Due paragrafi in totale, uno per oggi e uno per domani. Lascia ESATTAMENTE una riga vuota tra un paragrafo e l'altro.
     3. STILE TEMPERATURE E DISAGIO: Usa il singolare (es. "una temperatura minima di 20°C e una massima di 34°C"). Il disagio termico va inserito tra parentesi con l'emoji.
-    4. STILE VENTO E PRECIPITAZIONI: Se indichi raffiche o inizio/fine ventilazione, integra fluidamente (es. "La ventilazione si intensificherà nel pomeriggio per poi attenuarsi in serata, con raffiche massime attorno ai 40 km/h"). Se nei dati leggi "ventilazione blanda", scrivi ESATTAMENTE "La ventilazione sarà blanda." senza inventare nient'altro.
+    4. STILE VENTO E PRECIPITAZIONI: Se indichi raffiche o inizio/fine ventilazione, integra fluidamente (es. "La ventilazione si intensificherà nel pomeriggio per poi attenuarsi in serata, con raffiche massime attorno ai 60 km/h"). Se nei dati leggi "ventilazione blanda" o "ventilazione modesta", scrivi ESATTAMENTE questo senza inventare orari o raffiche.
     5. ORARI E PREPOSIZIONI: Copia e usa ESATTAMENTE le preposizioni articolate di tempo fornite (es. "nel pomeriggio", "nella notte"). È severamente vietato scrivere "in notte" o "in pomeriggio". 
     6. DIVIETO ASSOLUTO DI COMMENTI SOGGETTIVI E RIEMPITIVI: NON aggiungere deduzioni o frasi finali come "offrendo condizioni ideali", "senza compromettere la piacevolezza", "rendendo la giornata scomoda". Mantieni un tono puramente descrittivo e strettamente meteorologico.
-    7. FORMATTAZIONE: Nessun asterisco o underscore.
+    7. QUALITÀ DELL'ARIA: Se nei dati compare l'avviso sulla qualità dell'aria, scrivilo ESATTAMENTE come fornito alla fine del paragrafo (es. "Attenzione, l'aria sarà inquinata.").
+    8. FORMATTAZIONE: Nessun asterisco o underscore.
     
     DATI DA TRASFORMARE:
     {dati_testuali}
@@ -175,6 +176,26 @@ def main():
             print(f"❌ Errore Seamless: {e}")
             return
 
+    # Recupero Qualità dell'aria (AQ)
+    h_aq = {}
+    try:
+        dati_aq = scarica_dati_con_retry("https://air-quality-api.open-meteo.com/v1/air-quality", params={
+            "latitude": LAT, "longitude": LON,
+            "hourly": "pm10,pm2_5",
+            "timezone": "Europe/Rome",
+            "forecast_days": 3
+        })
+        h_aq = dati_aq.get('hourly', {})
+    except Exception as e:
+        print(f"⚠️ Errore API Qualità Aria: {e}")
+
+    aq_dict = {}
+    for idx_aq, t_aq in enumerate(h_aq.get('time', [])):
+        aq_dict[t_aq] = {
+            'pm10': h_aq.get('pm10', [])[idx_aq] if idx_aq < len(h_aq.get('pm10', [])) else 0,
+            'pm25': h_aq.get('pm2_5', [])[idx_aq] if idx_aq < len(h_aq.get('pm2_5', [])) else 0
+        }
+
     h_eps = dati_eps.get('hourly', {})
     d_eps = dati_eps.get('daily', {})
     orari = h_eps.get('time', [])
@@ -188,7 +209,7 @@ def main():
         'w_gst_max': -1, 'ora_w_gst_max': None, 'ora_inizio_vento': None, 'ora_fine_vento': None,
         'ha_precip': False, 'ora_inizio_p': None, 'ora_fine_p': None, 'picco_p_mm': -1, 'ora_picco_p': None, 'prob_max_p': 0, 'tipo_p': "",
         'sole_mattino': [], 'sole_pomeriggio': [], 'cielo_mattino': "", 'cielo_pomeriggio': "",
-        'gelate': set(), 'nebbie': set()
+        'gelate': set(), 'nebbie': set(), 'aq_level': 0
     } for g in [0, 1]}
 
     for d_idx, d_str in enumerate(giorni_time):
@@ -208,6 +229,17 @@ def main():
         
         g_data = dati_giorni[giorno_idx]
         
+        # Qualità dell'aria oraria
+        pm10_val = aq_dict.get(orari[i], {}).get('pm10')
+        pm25_val = aq_dict.get(orari[i], {}).get('pm25')
+        if pm10_val is None: pm10_val = 0
+        if pm25_val is None: pm25_val = 0
+        
+        if pm10_val > 100 or pm25_val > 50:
+            g_data['aq_level'] = 2
+        elif (pm10_val > 51 or pm25_val > 36) and g_data['aq_level'] < 2:
+            g_data['aq_level'] = 1
+
         t_media = media_lista([h_eps[k][i] for k in h_eps if k.startswith('temperature_2m_member')])
         dew_media = media_lista([h_eps[k][i] for k in h_eps if k.startswith('dew_point_2m_member')])
         ur_media = media_lista([h_eps[k][i] for k in h_eps if k.startswith('relative_humidity_2m_member')])
@@ -234,12 +266,12 @@ def main():
         else: str_dis, liv_dis = calcola_disagio_freddo(app_media)
         if liv_dis > g_data['livello_disagio_max']: g_data['livello_disagio_max'], g_data['stringa_disagio'], g_data['ora_disagio_max'] = liv_dis, str_dis, ora_solare
 
-        # VENTO E TRACCIAMENTO INTENSIFICAZIONE
+        # VENTO E TRACCIAMENTO INTENSIFICAZIONE (Soglia approfondimento: 50 km/h)
         if w_gst_media > g_data['w_gst_max']: 
             g_data['w_gst_max'] = w_gst_media
             g_data['ora_w_gst_max'] = ora_solare
             
-        if w_gst_media >= 30:
+        if w_gst_media >= 50:
             if g_data['ora_inizio_vento'] is None: g_data['ora_inizio_vento'] = ora_solare
             g_data['ora_fine_vento'] = ora_solare # Estende continuamente il termine
                 
@@ -311,8 +343,8 @@ def main():
             int_prec = "forti" if dg['picco_p_mm'] > 5 else ("moderate" if dg['picco_p_mm'] >= 2 else "deboli")
             testo_per_ia += f"  Intensità massima stimata come {int_prec} (circa {arrotonda_tondo(dg['picco_p_mm'])} mm/h).\n"
             
-        if dg['w_gst_max'] >= 30:
-            int_vento = "tempestosa" if dg['w_gst_max'] >= 70 else ("forte" if dg['w_gst_max'] >= 50 else "modesta")
+        if dg['w_gst_max'] >= 50:
+            int_vento = "tempestosa" if dg['w_gst_max'] >= 70 else "forte"
             txt_vento = f"- Vento: ventilazione {int_vento}."
             if dg['ora_inizio_vento'] != dg['ora_fine_vento']:
                 txt_vento += f" Intensificazione a partire da {ottieni_fascia_oraria(dg['ora_inizio_vento'])} (ore {dg['ora_inizio_vento']}), in attenuazione {ottieni_fascia_oraria(dg['ora_fine_vento'])} (ore {dg['ora_fine_vento']})."
@@ -320,11 +352,19 @@ def main():
                 txt_vento += f" Breve rinforzo isolato {ottieni_fascia_oraria(dg['ora_inizio_vento'])} (ore {dg['ora_inizio_vento']})."
             txt_vento += f" La media degli scenari indica raffiche massime {ottieni_fascia_oraria(dg['ora_w_gst_max'])} attorno ai {arrotonda_tondo(dg['w_gst_max'])} km/h."
             testo_per_ia += txt_vento + "\n"
+        elif dg['w_gst_max'] >= 30:
+            testo_per_ia += "- Vento: ventilazione modesta.\n"
         else:
             testo_per_ia += "- Vento: ventilazione blanda.\n"
             
         if dg['gelate']: testo_per_ia += f"- Pericolo gelo: {', '.join(dg['gelate'])}\n"
         if dg['nebbie']: testo_per_ia += f"- Rischio nebbia nelle seguenti fasce orarie: {', '.join(dg['nebbie'])}\n"
+        
+        if dg['aq_level'] == 2:
+            testo_per_ia += "- Attenzione l'aria sarà molto inquinata 🟣.\n"
+        elif dg['aq_level'] == 1:
+            testo_per_ia += "- Attenzione, l'aria sarà inquinata 🔴.\n"
+            
         testo_per_ia += "\n"
 
     bollettino_finale = interpella_groq(testo_per_ia, oggi_str, domani_str)
