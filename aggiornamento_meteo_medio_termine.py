@@ -152,8 +152,7 @@ def interpella_groq(dati_testuali, oggi_str, giorni_str):
     if not api_key: return "Errore: GROQ_API_KEY non trovata."
     client = Groq(api_key=api_key)
     
-    prompt = f
-    """
+    prompt = f'''
     Sei un meteorologo professionista. Scrivi un bollettino discorsivo, fluido ed elegante per Rivoli a MEDIO TERMINE.
     Ti fornirò i "fatti salienti" generati da algoritmi matematici.
     
@@ -173,11 +172,11 @@ def interpella_groq(dati_testuali, oggi_str, giorni_str):
     4. CIELO E NEBBIA: Non usare MAI l'avverbio "prevalentemente", usa sempre "in prevalenza". Se nei dati è indicata la nebbia, integrala in maniera fluida con la descrizione della nuvolosità (es. "Al mattino saranno possibili banchi di nebbia, che lasceranno spazio a un cielo in prevalenza poco nuvoloso...").
     5. STILE VENTO E DISAGIO FREDDO: Se nei dati leggi "La ventilazione sarà blanda" o "La ventilazione sarà da blanda a moderata", scrivi ESATTAMENTE questo. Se è forte, aggancia fluidamente l'emoji e il disagio da freddo al vento se indicato.
     6. DIVIETO COMMENTI SOGGETTIVI: NON usare MAI espressioni romanzate come "condizioni ideali" o "giornata scomoda". Mantieni un tono tecnico e fattuale. NESSUN asterisco o markdown. Usa un linguaggio naturale per integrare le varie fasi di precipitazione fornite nei dati.
-    7. QUALITÀ DELL'ARIA E SABBIA: Se presente l'avviso per aria inquinata o depositi di sabbia sulle superfici esposte, riportalo testualmente in modo asciutto alla fine del rispettivo paragrafo..
+    7. QUALITÀ DELL'ARIA E SABBIA: Se presente l'avviso per aria inquinata o depositi di sabbia sulle superfici esposte, riportalo testualmente in modo asciutto alla fine del rispettivo paragrafo.
     
     DATI DA TRASFORMARE:
     {dati_testuali}
-    """
+    '''
     try:
         res = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="llama-3.3-70b-versatile", temperature=0.25)
         return res.choices[0].message.content
