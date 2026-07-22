@@ -26,11 +26,24 @@ def calcola_vettore_traslazione(u, v):
     direction_deg = (math.degrees(math.atan2(u, v)) + 360) % 360
     return speed_kmh, direction_deg
 
-def classificazione_traslazione(kmh):
-    if kmh < 15: return "molto lenta, originando fenomeni quasi stazionari"
-    if kmh < 30: return "lenta"
-    if kmh < 50: return "rapida"
-    return "molto rapida"
+def magnitudo_shear(u1, v1, u2, v2):
+    """Calcola la magnitudo (m/s) della differenza vettoriale."""
+    if None in (u1, v1, u2, v2):
+        return None
+    return math.sqrt((u2 - u1)**2 + (v2 - v1)**2)
+
+def arrotonda_decina(valore):
+    """Arrotonda la raffica di vento alla decina più vicina (es. 16 -> 20)."""
+    if valore is None: return 0
+    v = int(round(valore))
+    if v < 10: return v
+    return int(round(v / 10.0) * 10)
+
+def classificazione_traslazione_avverbio(kmh):
+    if kmh < 15: return "molto lentamente, risultando quasi stazionario"
+    if kmh < 30: return "lentamente"
+    if kmh < 50: return "rapidamente"
+    return "molto rapidamente"
 
 def formatta_direzione_bussola(gradi):
     direzioni = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ovest", "ovest", "nord-ovest"]
@@ -65,10 +78,19 @@ def check_probabilita_precipitazione():
         return []
 
 def fetch_dati_termodinamici():
+    """Scarica tutti i dati termodinamici per calcoli identici allo script avanzato."""
     url = "https://api.open-meteo.com/v1/forecast"
-    hourly_params = "precipitation_probability,temperature_2m,dew_point_2m,wind_gusts_10m,lightning_potential,updraft,convective_cloud_base,convective_cloud_top,cape,freezing_level_height,wind_speed_1000hPa,wind_direction_1000hPa,wind_speed_850hPa,wind_direction_850hPa,wind_speed_700hPa,wind_direction_700hPa,wind_speed_500hPa,wind_direction_500hPa"
+    hourly_params = (
+        "precipitation_probability," 
+        "temperature_2m,relative_humidity_2m,dew_point_2m,wind_gusts_10m,lightning_potential,updraft,convective_cloud_base,convective_cloud_top,cape,freezing_level_height,"
+        "wind_speed_1000hPa,wind_direction_1000hPa,wind_speed_850hPa,wind_direction_850hPa,wind_speed_700hPa,wind_direction_700hPa,wind_speed_500hPa,wind_direction_500hPa"
+    )
     params = {"latitude": LAT, "longitude": LON, "models": "dwd_icon_d2,meteoswiss_icon_ch2", "hourly": hourly_params, "timezone": "Europe/Rome", "forecast_days": 3}
     return requests.get(url, params=params, timeout=40).json()['hourly']
+
+def media_sicura(lista):
+    valori = [x for x in lista if x is not None]
+    return sum(valori) / len(valori) if valori else None
 
 def max_sicuro(lista):
     valori = [x for x in lista if x is not None]
@@ -78,18 +100,27 @@ def min_sicuro(lista):
     valori = [x for x in lista if x is not None]
     return min(valori) if valori else 0
 
-def stima_grandine(cape, updraft, spessore):
-    if cape > 2500 or updraft > 15: return "potenzialmente di grandi dimensioni (> 5 cm)"
-    if cape > 1500: return "di medie dimensioni (3 - 5 cm)"
-    if cape > 800: return "di piccole dimensioni (1.5 - 3 cm)"
-    if cape > 400: return "molto piccola o assente (< 1.5 cm)"
+def stima_grandine_pubblico(cape, updraft, dls, zero_termico, spessore_nube):
+    """Valuta la grandine con la stessa precisione dello script approfondito, ma restituisce testo colloquiale."""
+    cape = cape or 0
+    updraft = updraft or 0
+    dls = dls or 0
+    spessore_nube = spessore_nube or 0
+    
+    if cape < 200 or spessore_nube < 3000:
+        return "assente"
+    if updraft > 15 or cape > 2500 or (cape > 1500 and dls > 25):
+        return "potenzialmente di grandi dimensioni (fino a 5 cm o oltre)"
+    if updraft > 8 or cape > 1500 or (cape > 1000 and dls > 20):
+        return "di medie dimensioni (fino a 5 cm)"
+    if updraft > 4 or cape > 800 or (cape > 500 and dls > 15):
+        return "di piccole dimensioni"
+    if updraft > 1.5 or cape > 400:
+        if zero_termico is not None and zero_termico > 4000:
+            return "molto piccola o assente"
+        return "di piccole dimensioni"
+        
     return "assente"
-
-def stima_downburst(gust):
-    if gust > 80: return "molto intenso (oltre 80 km/h)"
-    if gust > 60: return "intenso (fino a 80 km/h)"
-    if gust > 50: return "moderato (fino a 70 km/h)"
-    return "debole"
 
 def ora_con_articolo(ora):
     if ora == 0: return "la mezzanotte"
@@ -102,27 +133,28 @@ def formatta_fascia_oraria(ora_str):
     ora_dopo = (ora_centrale + 1) % 24
     return f"tra {ora_con_articolo(ora_prima)} e {ora_con_articolo(ora_dopo)}"
 
-def interpella_groq_semplice(report, giorno_str, fascia, traslazione_kmh, traslazione_dir, grandine):
+def interpella_groq_semplice(giorno_str, fascia, max_vento_arrotondato, trasl_kmh, trasl_dir, grandine_str):
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key: return "Errore: Manca la chiave API di Groq."
     client = Groq(api_key=api_key)
     
-    velocita_str = classificazione_traslazione(traslazione_kmh)
-    dir_testuale = formatta_direzione_bussola(traslazione_dir)
-    max_vento = report.split('Max Gust: ')[1].split(' ')[0]
+    velocita_str = classificazione_traslazione_avverbio(trasl_kmh)
+    dir_testuale = formatta_direzione_bussola(trasl_dir)
     
     prompt = f"""
-    Sei un meteorologo che parla al pubblico. Il {giorno_str} a Rivoli sono previsti fenomeni.
+    Sei un meteorologo che parla al pubblico in modo diretto e chiaro. Per la giornata del {giorno_str} a Rivoli sono previsti fenomeni.
 
-    REGOLE:
-    1. INIZIA ESATTAMENTE COSÌ E NON CAMBIARE UNA VIRGOLA DELL'INCIPIT: "Dagli ultimi aggiornamenti sembrerebbero possibili rovesci o temporali {fascia}, potenzialmente accompagnati da pioggia forte e raffiche di vento fino a {max_vento} km/h."
-    2. CONTINUAZIONE: Aggiungi "La grandine dovrebbe risultare {grandine}." 
-    3. TRASLAZIONE: Aggiungi "Il sistema temporalesco traslerà in modo {velocita_str} verso {dir_testuale}."
+    DEVI CREARE UN UNICO PARAGRAFO FLUIDO SEGUENDO ESATTAMENTE QUESTE 4 REGOLE:
+    
+    1. INIZIA TESTUALMENTE COSÌ (non cambiare l'incipit): "Dagli ultimi aggiornamenti sembrerebbero possibili rovesci o temporali {fascia}, potenzialmente accompagnati da intense precipitazioni e raffiche di vento fino a {max_vento_arrotondato} km/h."
+    2. GRANDINE: Aggiungi "La grandine dovrebbe risultare {grandine_str}." (Nota: se il dato dice assente, scrivi semplicemente "La grandine dovrebbe risultare assente.")
+    3. TRASLAZIONE: Aggiungi "Il sistema temporalesco traslerà {velocita_str} verso {dir_testuale}."
     4. CONCLUSIONE OBBLIGATORIA (Copia e incolla testualmente): "Attenzione: considera che si tratta di fenomenologia localizzata e difficilmente prevedibile, non è dunque da escludere che le precipitazioni interessino maggiormente i comuni limitrofi o lascino addirittura completamente all'asciutto la tua zona."
-    5. NON SCRIVERE ALTRO. Assicurati che il risultato sia un paragrafo coeso e fluido. NO HTML, NO JARGON TECNICO (no celle, no downburst, no updraft, no cape), NO LISTE.
+    
+    IMPORTANTE: Unisci queste frasi per formare un unico blocco di testo leggibile. NON USARE HTML, NON SCRIVERE ALTRO (nessun "ecco a te" o simili). NON USARE TERMINI TECNICI.
     """
     try:
-        return client.chat.completions.create(messages=[{"role":"user","content":prompt}], model="llama-3.3-70b-versatile", temperature=0.25).choices[0].message.content
+        return client.chat.completions.create(messages=[{"role":"user","content":prompt}], model="llama-3.3-70b-versatile", temperature=0.2).choices[0].message.content
     except Exception as e:
         return f"Errore AI Groq: {e}"
 
@@ -156,37 +188,54 @@ def main():
                 idx_picco = i
                 break
         
-        idx_picco = idx_picco if idx_picco != -1 else [i for i in idx_g if hourly['time'][i].endswith("16:00")][0]
-        indici = [idx for idx in range(idx_picco - 3, idx_picco + 1) if 0 <= idx < len(hourly['time'])]
+        if idx_picco == -1:
+            idx_picco = [i for i in idx_g if hourly['time'][i].endswith("16:00")][0]
+            print(f"[{data_str}] Nessun innesco orario netto trovato, fallback alle 16:00.")
+            
+        indici_attivi = [idx for idx in range(idx_picco - 3, idx_picco + 1) if 0 <= idx < len(hourly['time'])]
         
-        cape = max_sicuro([hourly['cape_dwd_icon_d2'][i] for i in indici])
-        gust = max_sicuro([hourly['wind_gusts_10m_dwd_icon_d2'][i] for i in indici])
-        gust = int(gust) if gust else 0
-        updraft = max_sicuro([hourly['updraft_dwd_icon_d2'][i] for i in indici])
-        min_base = min_sicuro([hourly['convective_cloud_base_dwd_icon_d2'][i] for i in indici])
-        max_top = max_sicuro([hourly['convective_cloud_top_dwd_icon_d2'][i] for i in indici])
+        # Estrazione Dati per allineamento perfetto con il codice avanzato
+        cape = max_sicuro([hourly['cape_dwd_icon_d2'][i] for i in indici_attivi])
+        updraft = max_sicuro([hourly['updraft_dwd_icon_d2'][i] for i in indici_attivi])
+        gust = max_sicuro([hourly['wind_gusts_10m_dwd_icon_d2'][i] for i in indici_attivi])
+        vento_arrotondato = arrotonda_decina(gust)
+        
+        min_base = min_sicuro([hourly['convective_cloud_base_dwd_icon_d2'][i] for i in indici_attivi])
+        max_top = max_sicuro([hourly['convective_cloud_top_dwd_icon_d2'][i] for i in indici_attivi])
         spessore = (max_top - min_base) if min_base and max_top else 0
+        z_termico = media_sicura([hourly['freezing_level_height_dwd_icon_d2'][i] for i in indici_attivi])
+
+        # Calcolo dei Vettori e del DLS (Shear Profondo 0-6km)
+        u_10, v_10 = [], []
+        u_850, v_850 = [], []
+        u_700, v_700 = [], []
+        u_500, v_500 = [], []
+
+        for i in indici_attivi:
+            u, v = scomposizione_vettoriale(hourly['wind_speed_1000hPa_dwd_icon_d2'][i], hourly['wind_direction_1000hPa_dwd_icon_d2'][i])
+            u_10.append(u); v_10.append(v)
+            u, v = scomposizione_vettoriale(hourly['wind_speed_850hPa_dwd_icon_d2'][i], hourly['wind_direction_850hPa_dwd_icon_d2'][i])
+            u_850.append(u); v_850.append(v)
+            u, v = scomposizione_vettoriale(hourly['wind_speed_700hPa_dwd_icon_d2'][i], hourly['wind_direction_700hPa_dwd_icon_d2'][i])
+            u_700.append(u); v_700.append(v)
+            u, v = scomposizione_vettoriale(hourly['wind_speed_500hPa_dwd_icon_d2'][i], hourly['wind_direction_500hPa_dwd_icon_d2'][i])
+            u_500.append(u); v_500.append(v)
+
+        avg_u10, avg_v10 = sum(u_10)/len(u_10), sum(v_10)/len(v_10)
+        avg_u850, avg_v850 = sum(u_850)/len(u_850), sum(v_850)/len(v_850)
+        avg_u700, avg_v700 = sum(u_700)/len(u_700), sum(v_700)/len(v_700)
+        avg_u500, avg_v500 = sum(u_500)/len(u_500), sum(v_500)/len(v_500)
+
+        dls = magnitudo_shear(avg_u10, avg_v10, avg_u500, avg_v500)
         
-        # Filtro "Safe" per prevenire i TypeErrors sul vento
-        w_speed_850 = hourly['wind_speed_850hPa_dwd_icon_d2'][idx_picco] if hourly['wind_speed_850hPa_dwd_icon_d2'][idx_picco] is not None else 0
-        w_dir_850 = hourly['wind_direction_850hPa_dwd_icon_d2'][idx_picco] if hourly['wind_direction_850hPa_dwd_icon_d2'][idx_picco] is not None else 0
-        w_speed_700 = hourly['wind_speed_700hPa_dwd_icon_d2'][idx_picco] if hourly['wind_speed_700hPa_dwd_icon_d2'][idx_picco] is not None else 0
-        w_dir_700 = hourly['wind_direction_700hPa_dwd_icon_d2'][idx_picco] if hourly['wind_direction_700hPa_dwd_icon_d2'][idx_picco] is not None else 0
-        w_speed_500 = hourly['wind_speed_500hPa_dwd_icon_d2'][idx_picco] if hourly['wind_speed_500hPa_dwd_icon_d2'][idx_picco] is not None else 0
-        w_dir_500 = hourly['wind_direction_500hPa_dwd_icon_d2'][idx_picco] if hourly['wind_direction_500hPa_dwd_icon_d2'][idx_picco] is not None else 0
-        
-        u_850, v_850 = scomposizione_vettoriale(w_speed_850, w_dir_850)
-        u_700, v_700 = scomposizione_vettoriale(w_speed_700, w_dir_700)
-        u_500, v_500 = scomposizione_vettoriale(w_speed_500, w_dir_500)
-        trasl_kmh, trasl_dir = calcola_vettore_traslazione((u_850+u_700+u_500)/3, (v_850+v_700+v_500)/3)
-        
-        grandine_str = stima_grandine(cape, updraft, spessore)
-        report_dati = f"Max Gust: {gust} km/h, CAPE: {cape}"
+        # Traslazione e Grandine
+        trasl_kmh, trasl_dir = calcola_vettore_traslazione((avg_u850+avg_u700+avg_u500)/3, (avg_v850+avg_v700+avg_v500)/3)
+        grandine_str = stima_grandine_pubblico(cape, updraft, dls, z_termico, spessore)
         
         ora_stringa = datetime.fromisoformat(hourly['time'][idx_picco]).strftime('%H:%M')
         fascia = formatta_fascia_oraria(ora_stringa)
         
-        testo = interpella_groq_semplice(report_dati, data_str, fascia, trasl_kmh, trasl_dir, grandine_str)
+        testo = interpella_groq_semplice(data_str, fascia, vento_arrotondato, trasl_kmh, trasl_dir, grandine_str)
         
         if not testo.startswith("Errore AI Groq"):
             testo = testo.replace('<', '&lt;').replace('>', '&gt;')
