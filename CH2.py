@@ -100,27 +100,49 @@ def scarica_grib_stac(dt_run_utc: datetime, target_start: datetime, target_end: 
         target_str_z = target.strftime('%Y-%m-%dT%H:%M:%SZ')
         print(f"\n🔍 Ricerca STAC mirata per validità: {target_str_z}...")
         
-        try:
-            res = requests.get(base_url, params={"datetime": target_str_z}, timeout=30)
-            res.raise_for_status()
-            data = res.json()
-        except Exception as e:
-            print(f"⚠️ Errore API STAC: {e}")
-            continue
+        features = []
+        current_url = base_url
+        params = {"datetime": target_str_z, "limit": 1000} 
+        
+        # CICLO DI PAGINAZIONE: Scarica tutte le pagine di risultati finché ce ne sono
+        while current_url:
+            try:
+                res = requests.get(current_url, params=params, timeout=30)
+                res.raise_for_status()
+                data = res.json()
+                
+                page_features = data.get("features", [])
+                features.extend(page_features)
+                
+                # Cerca il link alla pagina successiva dettato dal server
+                next_link = None
+                for link in data.get("links", []):
+                    if link.get("rel") == "next":
+                        next_link = link.get("href")
+                        break
+                        
+                if next_link:
+                    current_url = next_link
+                    params = {} # I parametri sono già "iniettati" dal server nel link next
+                else:
+                    current_url = None # Fine delle pagine
+                    
+            except Exception as e:
+                print(f"⚠️ Errore API STAC durante la paginazione: {e}")
+                break
 
-        features = data.get("features", [])
-        print(f" -> Trovati {len(features)} pacchetti svizzeri per questa esatta ora.")
+        print(f" -> Trovati {len(features)} pacchetti totali (dopo paginazione) per questa esatta ora.")
         
         # Firme temporali per riconoscere a quale RUN appartiene il pacchetto
         str_run_iso = dt_run_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
-        str_run_flat = dt_run_utc.strftime('%Y%m%d%H')
         
         trovato = False
         for feat in features:
-            feat_str = str(feat)
+            props = feat.get("properties", {})
+            ref_time = props.get("forecast:reference_datetime", "")
             
             # Se la firma del nostro run è dentro i metadati del pacchetto...
-            if str_run_iso in feat_str or str_run_flat in feat_str:
+            if str_run_iso in ref_time or str_run_iso in str(feat):
                 assets = feat.get("assets", {})
                 for key, asset in assets.items():
                     key_upper = key.upper()
