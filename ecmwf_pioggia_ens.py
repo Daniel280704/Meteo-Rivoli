@@ -20,10 +20,10 @@ def download_and_plot():
             date=20260723,
             time=0,
             step=[48, 96],
-            stream="oper",     # <-- CAMBIATO: Run Deterministico (HRES)
-            type="fc",         # <-- CAMBIATO: Forecast
+            stream="oper",
+            type="fc",
             levtype="sfc",     
-            param=['tp'],      # Precipitazione Totale
+            param=['tp'],
             target=FILENAME
         )
     except Exception as e:
@@ -36,11 +36,10 @@ def download_and_plot():
 
     data = mv.read(FILENAME)
     
-    # Estraiamo le due mappe dal file
     tp_48 = data.select(step=48)
     tp_96 = data.select(step=96)
     
-    # Sottrazione per isolare l'accumulo delle 48 ore e conversione in millimetri
+    # Sottrazione per isolare l'accumulo delle 48 ore e conversione in mm
     tp_accumulo_mm = (tp_96 - tp_48) * 1000
     
     coast = mv.mcoast(
@@ -53,7 +52,7 @@ def download_and_plot():
         map_administrative_boundaries="on", 
         map_administrative_boundaries_colour="RGB(0.3, 0.3, 0.3)",
         map_administrative_boundaries_thickness=1,
-        map_coastline_land_shade="off",
+        map_coastline_land_shade="off", # Sfondo completamente trasparente/bianco
         map_coastline_sea_shade="off",
         map_grid="off",
         map_label="off"
@@ -62,47 +61,43 @@ def download_and_plot():
     view = mv.geoview(
         map_area_definition="corners",
         area=[43.5, 6.0, 46.8, 10.5], 
-        coastlines=coast,
-        subpage_y_position=12,
-        subpage_y_length=72
+        coastlines=coast
     )
 
-    # STILE PRECIPITAZIONI
+    # STILE PRECIPITAZIONI: Isoiete colorate
     tp_style = mv.mcont(
-        legend="on",
-        contour="off", 
-        contour_shade="on",
-        contour_shade_technique="polygon_shading",
+        legend="off", # Niente legenda
+        contour="on",
+        contour_shade="off", # Niente riempimento a colore
+        contour_line_thickness=3, # Linee spesse per essere ben visibili sul bianco
+        contour_highlight="off",
+        contour_label="on",
+        contour_label_height=0.4,
+        contour_label_colour="black",
+        contour_label_frequency=1,
         contour_level_selection_type="level_list",
-        contour_level_list=[0.5, 2, 5, 10, 20, 30, 50, 75, 100, 150, 200],
-        contour_shade_colour_method="list",
-        contour_shade_colour_list=[
-            "RGB(0.7, 0.9, 1.0)",  
-            "RGB(0.4, 0.7, 1.0)",  
-            "RGB(0.1, 0.4, 1.0)",  
-            "RGB(0.0, 0.2, 0.7)",  
-            "RGB(0.2, 0.8, 0.2)",  
-            "RGB(0.0, 0.5, 0.0)",  
-            "RGB(1.0, 1.0, 0.0)",  
-            "RGB(1.0, 0.6, 0.0)",  
-            "RGB(1.0, 0.0, 0.0)",  
-            "RGB(0.6, 0.0, 0.6)"   
+        contour_level_list=[0.5, 2, 5, 10, 15, 20, 30, 40, 50, 65, 80, 100, 150],
+        contour_line_colour_method="list",
+        contour_line_colour_list=[
+            "RGB(0.6, 0.8, 1.0)",  # 0.5: Azzurrino
+            "RGB(0.0, 0.3, 1.0)",  # 2.0: Blu
+            "RGB(0.4, 0.9, 0.4)",  # 5.0: Verde chiaro
+            "RGB(0.0, 0.6, 0.0)",  # 10.0: Verde scuro
+            "RGB(1.0, 0.9, 0.0)",  # 15.0: Giallo
+            "RGB(0.9, 0.7, 0.0)",  # 20.0: Giallo scuro
+            "RGB(1.0, 0.6, 0.0)",  # 30.0: Arancione chiaro
+            "RGB(1.0, 0.4, 0.0)",  # 40.0: Arancione scuro
+            "RGB(1.0, 0.2, 0.2)",  # 50.0: Rosso chiaro
+            "RGB(0.7, 0.0, 0.0)",  # 65.0: Rosso scuro
+            "RGB(0.8, 0.2, 1.0)",  # 80.0: Viola chiaro
+            "RGB(0.5, 0.0, 0.8)",  # 100.0: Viola
+            "RGB(0.3, 0.0, 0.5)"   # 150.0: Viola scuro
         ]
-    )
-    
-    legend = mv.mlegend(
-        legend_display_type="continuous",
-        legend_box_mode="positional",
-        legend_box_x_position=1.0,   
-        legend_box_y_position=17.5,  
-        legend_box_x_length=27.0,    
-        legend_box_y_length=1.5,     
-        legend_text_font_size=0.4
     )
     
     title = mv.mtext(
         text_lines=[
-            "Precipitazione Accumulata in 48h (mm) - ECMWF HRES",
+            "Isoiete Accumulo 48h (mm) - ECMWF HRES",
             "Inizio: 25 Lug 00:00 UTC  |  Fine: 26 Lug 23:59 UTC (Run Base: 23 Lug 2026 00:00 UTC)"
         ],
         text_font_size=0.45,
@@ -116,7 +111,9 @@ def download_and_plot():
     )
     
     mv.setoutput(png)
-    mv.plot(view, tp_accumulo_mm, tp_style, legend, title)
+    
+    # Rimosso l'oggetto legend dal plot
+    mv.plot(view, tp_accumulo_mm, tp_style, title)
     return True
 
 def invia_telegram():
@@ -128,7 +125,7 @@ def invia_telegram():
         return
         
     url = f"https://api.telegram.org/bot{token}/sendPhoto"
-    payload = {"chat_id": chat_id, "caption": "Accumulo Precipitazioni 48h (25-26 Luglio) - ECMWF HRES"}
+    payload = {"chat_id": chat_id, "caption": "Isoiete Precipitazioni 48h (25-26 Luglio) - ECMWF HRES"}
     
     file_path = f"{PNG_OUTPUT}.1.png"
     
