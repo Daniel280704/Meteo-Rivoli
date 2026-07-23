@@ -117,9 +117,9 @@ def scarica_grib_stac(dt_run_utc: datetime, target_start: datetime, target_end: 
                     key_upper = key.upper()
                     href = asset.get("href", "")
                     
-                    if href.upper().endswith(".GRIB2") and "CONSTANTS" not in key_upper:
+                    # FIX: Usiamo 'in' invece di 'endswith' per non farci ingannare dai token AWS (?AWSAccessKey...)
+                    if ".GRIB2" in href.upper() and "CONSTANTS" not in key_upper:
                         if "TOT_PR" in key_upper or "TOT_PREC" in key_upper or "PRECIP" in key_upper or "tot_pr" in href.lower():
-                            # Selezioniamo rigorosamente l'Ensemble Perturbato (-perturb)
                             if "-perturb" in href.lower():
                                 grib_urls.append(href)
                                 trovato = True
@@ -130,7 +130,7 @@ def scarica_grib_stac(dt_run_utc: datetime, target_start: datetime, target_end: 
                     # Rete a strascico generale in caso di metadati scarni
                     for key, asset in feat.get("assets", {}).items():
                         href = asset.get("href", "")
-                        if href.upper().endswith(".GRIB2") and "-perturb" in href.lower() and ("pr" in href.lower() or "prec" in href.lower()):
+                        if ".GRIB2" in href.upper() and "-perturb" in href.lower() and ("pr" in href.lower() or "prec" in href.lower()):
                             grib_urls.append(href)
                             trovato = True
                             print(f" -> OK: Selezionato GRIB precipitazione EPS per fallback [{key}]")
