@@ -15,15 +15,15 @@ def download_and_plot():
     
     # Run base: 23 Luglio 2026 alle 00:00 UTC.
     base_date = datetime(2026, 7, 23)
-    start_date = base_date + timedelta(hours=24)
-    end_date = base_date + timedelta(hours=48)
+    start_date = base_date + timedelta(hours=48) # 25/07/2026 00:00
+    end_date = base_date + timedelta(hours=72)   # 26/07/2026 00:00
     
-    # Scarichiamo i 50 spaghi per lo step 24h e 48h
+    # Scarichiamo i 50 spaghi per lo step 48h e 72h
     try:
         client.retrieve(
             date=base_date.strftime("%Y%m%d"),
             time=0,
-            step=[24, 48],
+            step=[48, 72],
             stream="enfo",     
             type="pf",         
             levtype="sfc",     
@@ -40,11 +40,11 @@ def download_and_plot():
 
     data = mv.read(FILENAME)
     
-    tp_24 = data.select(step=24)
     tp_48 = data.select(step=48)
+    tp_72 = data.select(step=72)
     
     # 1. Differenza in mm per ogni scenario (accumulo di 24 ore)
-    tp_diff_mm = (tp_48 - tp_24) * 1000
+    tp_diff_mm = (tp_72 - tp_48) * 1000
     
     # 2. MEDIA di tutti i 50 scenari
     tp_mean_mm = mv.mean(tp_diff_mm)
@@ -61,7 +61,7 @@ def download_and_plot():
         map_administrative_boundaries_colour="brown",
         map_administrative_boundaries_thickness=2,
         
-        # SHAPEFILE PROVINCE (Nome ufficiale ISTAT)
+        # SHAPEFILE PROVINCE 
         map_user_layer="on",
         map_user_layer_name="ProvCM01012026_WGS84.shp", 
         map_user_layer_colour="brown",
@@ -73,7 +73,7 @@ def download_and_plot():
         map_label="off"
     )
     
-    # IMPAGINAZIONE: Mappa stretta al 75% della larghezza per far spazio alla legenda a destra
+    # IMPAGINAZIONE: Mappa al 75% per fare spazio alla legenda a destra
     view = mv.geoview(
         map_area_definition="corners",
         area=[43.5, 6.0, 46.8, 10.5], 
@@ -152,10 +152,10 @@ def download_and_plot():
     legend = mv.mlegend(
         legend_display_type="continuous",
         legend_box_mode="positional",
-        legend_box_x_position=26.5,  # Posizionata a destra nel foglio
-        legend_box_y_position=3.0,   # Allineata in alto
-        legend_box_x_length=1.5,     # Barra stretta
-        legend_box_y_length=14.0,    # Barra lunga verticalmente
+        legend_box_x_position=26.5,  
+        legend_box_y_position=3.0,   
+        legend_box_x_length=1.5,     
+        legend_box_y_length=14.0,    
         legend_text_font_size=0.4
     )
     
