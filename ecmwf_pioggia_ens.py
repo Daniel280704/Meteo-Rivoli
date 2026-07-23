@@ -13,14 +13,12 @@ def download_and_plot():
     client = Client("ecmwf", beta=False)
     
     # Run base: 23 Luglio 2026 alle 00:00 UTC.
-    # Finestra accumulo: dalle 00:00 del 25 Luglio (+48h) alle 00:00 del 27 Luglio (+96h)
-    
     try:
         client.retrieve(
             date=20260723,
             time=0,
             step=[48, 96],
-            stream="oper",
+            stream="oper",     # Deterministico HRES
             type="fc",
             levtype="sfc",     
             param=['tp'],
@@ -39,20 +37,21 @@ def download_and_plot():
     tp_48 = data.select(step=48)
     tp_96 = data.select(step=96)
     
-    # Sottrazione per isolare l'accumulo delle 48 ore e conversione in mm
+    # Accumulo delle 48 ore in mm
     tp_accumulo_mm = (tp_96 - tp_48) * 1000
     
+    # CONFINI GEOGRAFICI MARRONI
     coast = mv.mcoast(
-        map_coastline_colour="black",
+        map_coastline_colour="brown",
         map_coastline_thickness=2,
         map_coastline_resolution="high",
         map_boundaries="on",
-        map_boundaries_colour="black",
+        map_boundaries_colour="brown",
         map_boundaries_thickness=2,
         map_administrative_boundaries="on", 
-        map_administrative_boundaries_colour="RGB(0.3, 0.3, 0.3)",
+        map_administrative_boundaries_colour="brown",
         map_administrative_boundaries_thickness=1,
-        map_coastline_land_shade="off", # Sfondo completamente trasparente/bianco
+        map_coastline_land_shade="off", 
         map_coastline_sea_shade="off",
         map_grid="off",
         map_label="off"
@@ -64,12 +63,30 @@ def download_and_plot():
         coastlines=coast
     )
 
-    # STILE PRECIPITAZIONI: Isoiete colorate
+    # CAPOLUOGHI DI PROVINCIA
+    lats = [45.07, 44.38, 44.90, 44.91, 45.32, 45.45, 45.56, 45.92]
+    lons = [7.68,  7.55,  8.20,  8.61,  8.42,  8.61,  8.05,  8.55]
+
+    capoluoghi = mv.input_visualiser(
+        input_plot_type="geo_points",
+        input_longitude_values=lons,
+        input_latitude_values=lats
+    )
+
+    stile_capoluoghi = mv.msymb(
+        legend="off",
+        symbol_type="marker",
+        symbol_colour="brown",
+        symbol_height=0.4,
+        symbol_marker_index=15
+    )
+
+    # STILE ISOIETE: Corretta la sintassi per colorare le singole linee
     tp_style = mv.mcont(
-        legend="off", # Niente legenda
+        legend="off",
         contour="on",
-        contour_shade="off", # Niente riempimento a colore
-        contour_line_thickness=3, # Linee spesse per essere ben visibili sul bianco
+        contour_shade="off",
+        contour_line_thickness=3,
         contour_highlight="off",
         contour_label="on",
         contour_label_height=0.4,
@@ -77,21 +94,22 @@ def download_and_plot():
         contour_label_frequency=1,
         contour_level_selection_type="level_list",
         contour_level_list=[0.5, 2, 5, 10, 15, 20, 30, 40, 50, 65, 80, 100, 150],
-        contour_line_colour_method="list",
-        contour_line_colour_list=[
-            "RGB(0.6, 0.8, 1.0)",  # 0.5: Azzurrino
-            "RGB(0.0, 0.3, 1.0)",  # 2.0: Blu
-            "RGB(0.4, 0.9, 0.4)",  # 5.0: Verde chiaro
-            "RGB(0.0, 0.6, 0.0)",  # 10.0: Verde scuro
-            "RGB(1.0, 0.9, 0.0)",  # 15.0: Giallo
-            "RGB(0.9, 0.7, 0.0)",  # 20.0: Giallo scuro
-            "RGB(1.0, 0.6, 0.0)",  # 30.0: Arancione chiaro
-            "RGB(1.0, 0.4, 0.0)",  # 40.0: Arancione scuro
-            "RGB(1.0, 0.2, 0.2)",  # 50.0: Rosso chiaro
-            "RGB(0.7, 0.0, 0.0)",  # 65.0: Rosso scuro
-            "RGB(0.8, 0.2, 1.0)",  # 80.0: Viola chiaro
-            "RGB(0.5, 0.0, 0.8)",  # 100.0: Viola
-            "RGB(0.3, 0.0, 0.5)"   # 150.0: Viola scuro
+        contour_line_colour="rainbow",                     # <-- ATTIVA LA MODALITA' MULTICOLORE
+        contour_line_colour_rainbow_method="list",         # <-- SPECIFICA CHE SI USA UNA LISTA
+        contour_line_colour_rainbow_colour_list=[          # <-- LA TUA LISTA DI COLORI
+            "RGB(0.6, 0.8, 1.0)",  
+            "RGB(0.0, 0.3, 1.0)",  
+            "RGB(0.4, 0.9, 0.4)",  
+            "RGB(0.0, 0.6, 0.0)",  
+            "RGB(1.0, 0.9, 0.0)",  
+            "RGB(0.9, 0.7, 0.0)",  
+            "RGB(1.0, 0.6, 0.0)",  
+            "RGB(1.0, 0.4, 0.0)",  
+            "RGB(1.0, 0.2, 0.2)",  
+            "RGB(0.7, 0.0, 0.0)",  
+            "RGB(0.8, 0.2, 1.0)",  
+            "RGB(0.5, 0.0, 0.8)",  
+            "RGB(0.3, 0.0, 0.5)"   
         ]
     )
     
@@ -112,8 +130,8 @@ def download_and_plot():
     
     mv.setoutput(png)
     
-    # Rimosso l'oggetto legend dal plot
-    mv.plot(view, tp_accumulo_mm, tp_style, title)
+    # Plot con Capoluoghi
+    mv.plot(view, tp_accumulo_mm, tp_style, capoluoghi, stile_capoluoghi, title)
     return True
 
 def invia_telegram():
