@@ -268,25 +268,36 @@ def genera_album_wind(dt_run_utc: datetime, nome_run: str):
             chart = earthkit.plots.Map(domain=domain)
             chart.grid_cells(vmax_geo, x="lon", y="lat", style=Style(colors=my_colors, levels=my_levels))
 
-            # Aggiunta vettori vento (ogni 3 punti per non intasare)
-            # I vettori mostrano direzione e intensità
-            lons_vec = u_geo.coords["lon"].values[::3]
-            lats_vec = u_geo.coords["lat"].values[::3]
-            u_vec = u_geo.values[::3, ::3]
-            v_vec = v_geo.values[::3, ::3]
+            # Aggiunta vettori vento (subsample ogni 4 punti per non intasare)
+            step = 4
+            lons_vec = u_geo.coords["lon"].values[::step]
+            lats_vec = u_geo.coords["lat"].values[::step]
             
-            # Crea mesh grid per i vettori
+            # Estrai i dati con lo stesso step
+            u_sub = u_geo.values[::step, ::step]
+            v_sub = v_geo.values[::step, ::step]
+            
+            # Crea mesh grid
             lon_mesh, lat_mesh = np.meshgrid(lons_vec, lats_vec)
             
-            # Normalizza i vettori per la visualizzazione
-            speed = np.sqrt(u_vec**2 + v_vec**2)
-            u_norm = np.where(speed > 0, u_vec / speed * 0.3, 0)
-            v_norm = np.where(speed > 0, v_vec / speed * 0.3, 0)
-            
-            # Colore dei vettori basato su intensità
-            chart.ax.quiver(lon_mesh, lat_mesh, u_norm, v_norm, speed, 
-                          cmap='cool', scale=15, scale_units='inches', 
-                          transform=ccrs.PlateCarree(), zorder=8, alpha=0.7)
+            # Verifica dimensioni
+            if lon_mesh.shape == u_sub.shape and lat_mesh.shape == u_sub.shape:
+                # Scala i vettori per la visualizzazione (normalizza)
+                speed = np.sqrt(u_sub**2 + v_sub**2)
+                speed_max = np.nanmax(speed)
+                if speed_max > 0:
+                    u_norm = u_sub / speed_max * 0.2
+                    v_norm = v_sub / speed_max * 0.2
+                else:
+                    u_norm = u_sub * 0
+                    v_norm = v_sub * 0
+                
+                # Colore dei vettori basato su intensità
+                chart.ax.quiver(lon_mesh, lat_mesh, u_norm, v_norm, speed, 
+                              cmap='YlOrRd', scale=25, scale_units='inches', 
+                              transform=ccrs.PlateCarree(), zorder=8, alpha=0.8)
+            else:
+                print(f"    ⚠️  Dimensioni vettori non compatibili, skip arrows")
 
             # Aggiunta Confini (Regione spessa, Provincia fine)
             chart.ax.add_feature(regions_feature)
