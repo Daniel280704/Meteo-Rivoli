@@ -1,8 +1,6 @@
-name: Generate ICON-CH2 ENS Maps
+name: Test API STAC Nativo (MeteoSwiss)
 
 on:
-  schedule:
-    - cron: '15 2,8,14,20 * * *'
   workflow_dispatch:
 
 jobs:
@@ -36,10 +34,7 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # Sposta lo script e la cartella shapefiles nel working directory
-          cp icon_ch2_ens_map.py opendata-nwp-demos/
-          cp -r shapefiles opendata-nwp-demos/ || echo "Attenzione: Cartella shapefiles non trovata"
+          # Copiamo lo script dentro la cartella clonata per accedere alle librerie installate
+          cp test_ch2_stac.py opendata-nwp-demos/
           cd opendata-nwp-demos
-          # Installazione delle librerie extra non incluse in earthkit
-          pip install pytz shapely
-          python icon_ch2_ens_map.py
+          python test_ch2_stac.py
