@@ -12,6 +12,7 @@ import warnings
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import cartopy.io.shapereader as shpreader
+from shapely.ops import unary_union
 
 import earthkit.plots
 from earthkit.plots.geo import bounds, domains
@@ -49,10 +50,9 @@ def estrai_limiti_run(hourly_data: dict, ref_param: str) -> tuple[bool, str, dat
     dt_end_local = rome_tz.localize(datetime.fromisoformat(ultima_ora_valida_str))
     dt_end_utc = dt_end_local.astimezone(timezone.utc)
     
-    # Troviamo l'innesco sapendo che ICON-CH2 dura 120 ore
+    # Troviamo l'innesco sapendo che il modello completo dura 120 ore
     dt_run_utc = dt_end_utc - timedelta(hours=120)
     
-    # Cerchiamo l'indice di partenza del forecast (+1 ora di delay)
     dt_start_local = (dt_run_utc + timedelta(hours=1)).astimezone(rome_tz)
     start_time_str = dt_start_local.strftime("%Y-%m-%dT%H:%M")
     
@@ -73,7 +73,7 @@ def estrai_limiti_run(hourly_data: dict, ref_param: str) -> tuple[bool, str, dat
         with open(FILE_LAST_HOUR, "r") as f:
             ultima_ora_salvata = f.read().strip()
         if ultima_ora_valida_str <= ultima_ora_salvata:
-            print(f"✅ Run ICON-CH2 {nome_run} già elaborato.")
+            print(f"✅ Run ICON-CH2 {nome_run} già elaborato in precedenza.")
             return False, "", None
 
     with open(FILE_LAST_HOUR, "w") as f:
@@ -122,12 +122,11 @@ def genera_mappe_accumuli(dt_run_utc: datetime, nome_run: str):
     dt_run_local = dt_run_utc.astimezone(rome_tz)
     end_time_local = dt_run_local + timedelta(hours=120)
 
-    # 1. Calcolo degli intervalli da mezzanotte a mezzanotte (Local Time)
+    # 1. Calcolo intervalli esatti (mezzanotte-mezzanotte locale)
     intervals = []
     curr_lead = 0
     while curr_lead < 120:
         start_dt = dt_run_local + timedelta(hours=curr_lead)
-        # Troviamo le 00:00 del giorno successivo
         next_midnight = (start_dt + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         
         if next_midnight > end_time_local:
@@ -138,7 +137,6 @@ def genera_mappe_accumuli(dt_run_utc: datetime, nome_run: str):
             intervals.append((curr_lead, end_lead))
         curr_lead = end_lead
 
-    # Estrazione dinamica degli step necessari per STAC API
     unique_leads = set()
     for a, b in intervals:
         if a > 0: unique_leads.add(a)
@@ -165,7 +163,6 @@ def genera_mappe_accumuli(dt_run_utc: datetime, nome_run: str):
     print("Calcolo media ensemble globale...")
     prec_mean = tot_prec.mean(dim="eps")
 
-    # 2. Configurazione Regridding e Stile
     xmin, xmax, ymin, ymax = 6.0, 10.5, 43.5, 46.8
     nx, ny = 300, 300
     destination = regrid.RegularGrid(CRS.from_string("epsg:4326"), nx, ny, xmin, xmax, ymin, ymax)
@@ -174,14 +171,35 @@ def genera_mappe_accumuli(dt_run_utc: datetime, nome_run: str):
     my_colors = ["#99ccff", "#004cff", "#66e666", "#009900", "#99cc00", "#ffe600", "#e6b300", "#ff9900", "#ff6600", "#ff3300", "#ff3333", "#b30000", "#cc33ff", "#8000cc", "#4d0080"]
     domain = domains.Domain.from_bbox(bbox=bounds.BoundingBox(xmin, xmax, ymin, ymax, ccrs.Geodetic()), name="Piemonte")
 
-    # Gestione livelli confini Geografici
-    regions_feature = cfeature.NaturalEarthFeature('cultural', 'admin_1_states_provinces', '10m', edgecolor='black', facecolor='none', linewidth=1.5)
-    prov_feature = None
+    # 2. Elaborazione dinamica dei confini da Shapefile
+    prov_geoms = []
     shp_path = "shapefiles/ProvCM01012026_WGS84.shp"
+    
     if os.path.exists(shp_path):
-        prov_feature = cfeature.ShapelyFeature(shpreader.Reader(shp_path).geometries(), ccrs.PlateCarree(), edgecolor='black', facecolor='none', linewidth=0.5, linestyle=':')
+        try:
+            for record in shpreader.Reader(shp_path).records():
+                # Filtra solo i poligoni che contengono la parola 'Piemonte' negli attributi
+                if any("piemonte" in str(v).lower() for v in record.attributes.values()):
+                    prov_geoms.append(record.geometry)
+            
+            # Fallback: se lo shapefile è già stato pre-ritagliato e non ha il nome della regione
+            if not prov_geoms:
+                prov_geoms = [record.geometry for record in shpreader.Reader(shp_path).records()]
+        except Exception as e:
+            print(f"Errore lettura shapefile: {e}")
 
-    # Dati per capoluoghi
+    prov_feature = None
+    regione_feature = None
+    
+    if prov_geoms:
+        # Confini provinciali (sottili, tratteggiati)
+        prov_feature = cfeature.ShapelyFeature(prov_geoms, ccrs.PlateCarree(), edgecolor='black', facecolor='none', linewidth=0.4, linestyle=':')
+        
+        # Confine regionale: unione di tutti i poligoni provinciali (spesso, continuo)
+        regione_geom = unary_union(prov_geoms)
+        regione_feature = cfeature.ShapelyFeature([regione_geom], ccrs.PlateCarree(), edgecolor='black', facecolor='none', linewidth=2.0, linestyle='-')
+
+    # Dati capoluoghi Piemontesi
     lats = [45.07, 44.38, 44.90, 44.91, 45.32, 45.45, 45.56, 45.92]
     lons = [7.68,  7.55,  8.20,  8.61,  8.42,  8.61,  8.05,  8.55]
     sigle = ["TO", "CN", "AT", "AL", "VC", "NO", "BI", "VB"]
@@ -200,14 +218,13 @@ def genera_mappe_accumuli(dt_run_utc: datetime, nome_run: str):
         chart = earthkit.plots.Map(domain=domain)
         chart.grid_cells(prec_geo, x="lon", y="lat", style=Style(colors=my_colors, levels=my_levels))
 
-        # Aggiunta Confini (Regione spessa, Provincia fine)
-        chart.ax.add_feature(regions_feature)
-        if prov_feature:
-            chart.ax.add_feature(prov_feature)
-        else:
-            chart.borders()
+        # Aggiunta Confini dinamici (Nessun altro confine tracciato)
+        if regione_feature: chart.ax.add_feature(regione_feature)
+        if prov_feature: chart.ax.add_feature(prov_feature)
+        
+        chart.coastlines(linewidth=0.5) # Disegna solo la costa ligure senza i confini politici
 
-        # Aggiunta Pallino Rivoli
+        # Aggiunta Pallino isolato (senza etichetta)
         chart.ax.plot(7.51, 45.07, marker='o', color='brown', markersize=6, transform=ccrs.PlateCarree())
 
         # Aggiunta Capoluoghi con Sigle
@@ -222,6 +239,8 @@ def genera_mappe_accumuli(dt_run_utc: datetime, nome_run: str):
 
         title = f"ICON-CH2 EPS - Accumulo Precipitazioni\nRun: {dt_run_utc.strftime('%d/%m/%Y %H:%M UTC')} | {str_valida}"
         chart.title(title)
+        
+        # Etichetta unificata della legenda in mm
         chart.legend(label="Precipitazioni (mm)")
 
         filename = f"accumulo_{a}_{b}.png"
@@ -229,11 +248,11 @@ def genera_mappe_accumuli(dt_run_utc: datetime, nome_run: str):
 
         invia_telegram(filename, f"🌧 ICON-CH2 EPS: Accumulo Pioggia\n🗓 {str_valida}\n⚙️ Run {nome_run}")
         
-        # Pulisce la figura per evitare sovrapposizioni o cali di RAM alla mappa successiva
         plt.close(chart.fig)
         time.sleep(10) # Pausa rispetto limiti Telegram
 
 def main():
+    print("Cerco l'ultimo run completo ICON-CH2 via Open-Meteo...")
     data = fetch_dati_con_retry()
     if not data: sys.exit(0)
         
@@ -245,7 +264,7 @@ def main():
         print(f"🚀 Lancio generazione mappe ICON-CH2 per il RUN {nome_run} ({dt_run_utc})")
         genera_mappe_accumuli(dt_run_utc, nome_run)
     else:
-        print("Nessun nuovo run trovato. Uscita.")
+        print("Nessun nuovo run completo trovato. Uscita.")
 
 if __name__ == "__main__":
     main()
